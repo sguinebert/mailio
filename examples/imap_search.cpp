@@ -18,6 +18,7 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <iostream>
 #include <list>
 #include <string>
+#include <chrono>
 #include <mailio/imap.hpp>
 
 
@@ -44,7 +45,8 @@ int main()
         conn.select(list<string>({"Inbox"}));
         list<unsigned long> messages;
         list<imap::search_condition_t> conds;
-        conds.push_back(imap::search_condition_t(imap::search_condition_t::BEFORE_DATE, boost::gregorian::date(2018, 6, 22)));
+        conds.push_back(imap::search_condition_t(imap::search_condition_t::BEFORE_DATE, 
+            std::chrono::year_month_day{std::chrono::year{2018}, std::chrono::month{6}, std::chrono::day{22}}));
         conds.push_back(imap::search_condition_t(imap::search_condition_t::SUBJECT, "mailio"));
         conn.search(conds, messages, true);
         for_each(messages.begin(), messages.end(), [](unsigned int msg_uid){ cout << msg_uid << endl; });

@@ -53,19 +53,29 @@ struct MAILIO_EXPORT mail_address
     @param mail_name    Name to set.
     @param mail_address Address to set.
     **/
-    mail_address(const string_t& mail_name, const std::string& mail_address);
+    mail_address(const string_t& mail_name, const std::string& mail_address)
+        : name(mail_name), address(mail_address)
+    {
+    }
 
     /**
     Checking if a mail is empty, i.e. name and address are empty.
 
     @return True if empty, false if not.
     **/
-    bool empty() const;
+    bool empty() const
+    {
+        return name.buffer.empty() && address.empty();
+    }
 
     /**
     Clearing name and address.
     **/
-    void clear();
+    void clear()
+    {
+        name.buffer.clear();
+        address.clear();
+    }
 };
 
 
@@ -95,7 +105,10 @@ struct MAILIO_EXPORT mail_group
     @param group_name  Name of a group.
     @param group_mails Members of a group.
     **/
-    mail_group(const std::string& group_name, const std::vector<mail_address>& group_mails);
+    mail_group(const std::string& group_name, const std::vector<mail_address>& group_mails)
+        : name(group_name), members(group_mails)
+    {
+    }
 
     /**
     Default destructor.
@@ -107,19 +120,29 @@ struct MAILIO_EXPORT mail_group
 
     @param mails Mail list to add.
     **/
-    void add(const std::vector<mail_address>& mails);
+    void add(const std::vector<mail_address>& mails)
+    {
+        members.insert(members.end(), mails.begin(), mails.end());
+    }
 
     /**
     Adding a mail to members.
 
     @param mail Mail to add.
     **/
-    void add(const mail_address& mail);
+    void add(const mail_address& mail)
+    {
+        members.push_back(mail);
+    }
 
     /**
     Clearing the group name and members.
     **/
-    void clear();
+    void clear()
+    {
+        name.clear();
+        members.clear();
+    }
 };
 
 
@@ -159,7 +182,10 @@ struct MAILIO_EXPORT mailboxes
     @param address_list Mail addresses to set.
     @param group_list   Mail groups to set.
     **/
-    mailboxes(std::vector<mail_address> address_list, std::vector<mail_group> group_list);
+    mailboxes(std::vector<mail_address> address_list, std::vector<mail_group> group_list)
+        : addresses(std::move(address_list)), groups(std::move(group_list))
+    {
+    }
 
     /**
     Default destructor.
@@ -181,12 +207,19 @@ struct MAILIO_EXPORT mailboxes
 
     @return True if empty, false if not.
     **/
-    bool empty() const;
+    bool empty() const
+    {
+        return addresses.empty() && groups.empty();
+    }
 
     /**
     Clearing the list of addresses.
     **/
-    void clear();
+    void clear()
+    {
+        addresses.clear();
+        groups.clear();
+    }
 };
 
 

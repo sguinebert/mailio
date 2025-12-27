@@ -19,7 +19,9 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #endif
 
 #include <string>
+#include <string_view>
 #include <stdexcept>
+#include <algorithm>
 #include <boost/algorithm/string.hpp>
 #include "export.hpp"
 
@@ -32,6 +34,8 @@ namespace mailio
 Base class for codecs, contains various constants and miscellaneous functions for encoding/decoding purposes.
 
 @todo `encode()` and `decode()` as abstract methods?
+@todo Consider using std::vector<std::uint8_t> or std::byte for binary data instead of std::string.
+      This would provide better semantic clarity between text and binary data.
 **/
 class MAILIO_EXPORT codec
 {
@@ -40,7 +44,10 @@ public:
     /**
     Calculating value of the given hex digit.
     **/
-    static int hex_digit_to_int(char digit);
+    static constexpr int hex_digit_to_int(char digit)
+    {
+        return digit >= ZERO_CHAR && digit <= NINE_CHAR ? digit - ZERO_CHAR : digit - A_CHAR + 10;
+    }
 
     /**
     Checking if a character is eight bit.
@@ -48,7 +55,10 @@ public:
     @param ch Character to check.
     @return   True if eight bit, false if seven bit.
     **/
-    static bool is_8bit_char(char ch);
+    static constexpr bool is_8bit_char(char ch)
+    {
+        return static_cast<unsigned>(ch) > 127;
+    }
 
     /**
     Escaping the specified characters in the given string.
@@ -57,7 +67,17 @@ public:
     @param escaping_chars Characters to be escaped.
     @return               The given string with the escaped characters.
     **/
-    static std::string escape_string(const std::string& text, const std::string& escaping_chars);
+    static std::string escape_string(const std::string& text, const std::string& escaping_chars)
+    {
+        std::string esc_str;
+        esc_str.reserve(text.size());
+        std::for_each(text.begin(), text.end(), [&](char ch) {
+            if (escaping_chars.find(ch) != std::string::npos)
+                esc_str += "\\";
+            esc_str += ch;
+        });
+        return esc_str;
+    }
 
     /**
     Surrounding the given string with the given character.
@@ -66,7 +86,10 @@ public:
     @param surround_char Character to be used for the surrounding.
     @return              Surrounded string.
     **/
-    static std::string surround_string(const std::string& text, char surround_char = '"');
+    static std::string surround_string(const std::string& text, char surround_char = '"')
+    {
+        return surround_char + text + surround_char;
+    }
 
     /**
     Checking if a string is eight bit encoded.
@@ -74,242 +97,248 @@ public:
     @param txt String to check.
     @return    True if it's eight bit, false if not.
     **/
-    static bool is_utf8_string(const std::string& txt);
+    static bool is_utf8_string(const std::string& txt)
+    {
+        for (auto ch : txt)
+            if (static_cast<unsigned>(ch) > 127)
+                return true;
+        return false;
+    }
 
     /**
     Nil character.
     **/
-    static const char NIL_CHAR = '\0';
+    static constexpr char NIL_CHAR = '\0';
 
     /**
     Carriage return character.
     **/
-    static const char CR_CHAR = '\r';
+    static constexpr char CR_CHAR = '\r';
 
     /**
     Line feed character.
     **/
-    static const char LF_CHAR = '\n';
+    static constexpr char LF_CHAR = '\n';
 
     /**
     Plus character.
     **/
-    static const char PLUS_CHAR = '+';
+    static constexpr char PLUS_CHAR = '+';
 
     /**
     Minus character.
     **/
-    static const char MINUS_CHAR = '-';
+    static constexpr char MINUS_CHAR = '-';
 
     /**
     Percent character.
     **/
-    static const char PERCENT_HEX_FLAG = '%';
+    static constexpr char PERCENT_HEX_FLAG = '%';
 
     /**
     Slash character.
     **/
-    static const char SLASH_CHAR = '/';
+    static constexpr char SLASH_CHAR = '/';
 
     /**
     Backslash character.
     **/
-    static const char BACKSLASH_CHAR = '\\';
+    static constexpr char BACKSLASH_CHAR = '\\';
 
     /**
     Equal character.
     **/
-    static const char EQUAL_CHAR = '=';
+    static constexpr char EQUAL_CHAR = '=';
 
     /**
     Equal character as string.
     **/
-    static const std::string EQUAL_STR;
+    static constexpr std::string_view EQUAL_STR{"="};
 
     /**
     Space character.
     **/
-    static const char SPACE_CHAR = ' ';
+    static constexpr char SPACE_CHAR = ' ';
 
     /**
     Space character as string.
     **/
-    static const std::string SPACE_STR;
+    static constexpr std::string_view SPACE_STR{" "};
 
     /**
     Exclamation mark character.
     **/
-    static const char EXCLAMATION_CHAR = '!';
+    static constexpr char EXCLAMATION_CHAR = '!';
 
     /**
     Question mark character.
     **/
-    static const char QUESTION_MARK_CHAR = '?';
+    static constexpr char QUESTION_MARK_CHAR = '?';
 
     /**
     Dot character.
     **/
-    static const char DOT_CHAR = '.';
+    static constexpr char DOT_CHAR = '.';
 
     /**
     Dot character string.
     **/
-    static const std::string DOT_STR;
+    static constexpr std::string_view DOT_STR{"."};
 
     /**
     Comma character.
     **/
-    static const char COMMA_CHAR = ',';
+    static constexpr char COMMA_CHAR = ',';
 
     /**
     Comma character as string.
     **/
-    static const std::string COMMA_STR;
+    static constexpr std::string_view COMMA_STR{","};
 
     /**
     Colon character.
     **/
-    static const char COLON_CHAR = ':';
+    static constexpr char COLON_CHAR = ':';
 
     /**
     Colon character as string.
     **/
-    static const std::string COLON_STR;
+    static constexpr std::string_view COLON_STR{":"};
 
     /**
     Semicolon character.
     **/
-    static const char SEMICOLON_CHAR = ';';
+    static constexpr char SEMICOLON_CHAR = ';';
 
     /**
     Semicolon character as string.
     **/
-    static const std::string SEMICOLON_STR;
+    static constexpr std::string_view SEMICOLON_STR{";"};
 
     /**
     Zero number character.
     **/
-    static const char ZERO_CHAR = '0';
+    static constexpr char ZERO_CHAR = '0';
 
     /**
     Nine number character.
     **/
-    static const char NINE_CHAR = '9';
+    static constexpr char NINE_CHAR = '9';
 
     /**
     Letter A character.
     **/
-    static const char A_CHAR = 'A';
+    static constexpr char A_CHAR = 'A';
 
     /**
     Tilde character.
     **/
-    static const char TILDE_CHAR = '~';
+    static constexpr char TILDE_CHAR = '~';
 
     /**
     Quote character.
     **/
-    static const char QUOTE_CHAR = '"';
+    static constexpr char QUOTE_CHAR = '"';
 
     /**
     Quote character as string.
     **/
-    static const std::string QUOTE_STR;
+    static constexpr std::string_view QUOTE_STR{"\""};
 
     /**
     Left parenthesis character.
     **/
-    static const char LEFT_PARENTHESIS_CHAR = '(';
+    static constexpr char LEFT_PARENTHESIS_CHAR = '(';
 
     /**
     Right parenthesis character.
     **/
-    static const char RIGHT_PARENTHESIS_CHAR = ')';
+    static constexpr char RIGHT_PARENTHESIS_CHAR = ')';
 
     /**
     Left bracket chartacter.
     **/
-    static const char LEFT_BRACKET_CHAR = '[';
+    static constexpr char LEFT_BRACKET_CHAR = '[';
 
     /**
     Right bracket chartacter.
     **/
-    static const char RIGHT_BRACKET_CHAR = ']';
+    static constexpr char RIGHT_BRACKET_CHAR = ']';
 
     /**
     Left brace character.
     **/
-    static const char LEFT_BRACE_CHAR = '{';
+    static constexpr char LEFT_BRACE_CHAR = '{';
 
     /**
     Right brace character.
     **/
-    static const char RIGHT_BRACE_CHAR = '}';
+    static constexpr char RIGHT_BRACE_CHAR = '}';
 
     /**
     Monkey character.
     **/
-    static const char MONKEY_CHAR = '@';
+    static constexpr char MONKEY_CHAR = '@';
 
     /**
     Less than character.
     **/
-    static const char LESS_THAN_CHAR = '<';
+    static constexpr char LESS_THAN_CHAR = '<';
 
     /**
     Less than character as string.
     **/
-    static const std::string LESS_THAN_STR;
+    static constexpr std::string_view LESS_THAN_STR{"<"};
 
     /**
     Greater than character.
     **/
-    static const char GREATER_THAN_CHAR = '>';
+    static constexpr char GREATER_THAN_CHAR = '>';
 
     /**
     Greater than character as string.
     **/
-    static const std::string GREATER_THAN_STR;
+    static constexpr std::string_view GREATER_THAN_STR{">"};
 
     /**
     Underscore character.
     **/
-    static const char UNDERSCORE_CHAR = '_';
+    static constexpr char UNDERSCORE_CHAR = '_';
 
     /**
     Hexadecimal alphabet.
     **/
-    static const std::string HEX_DIGITS;
+    static constexpr std::string_view HEX_DIGITS{"0123456789ABCDEF"};
 
     /**
     Carriage return plus line feed string.
     **/
-    static const std::string END_OF_LINE;
+    static constexpr std::string_view END_OF_LINE{"\r\n"};
 
     /**
     Dot character is the end of message for SMTP.
     **/
-    static const std::string END_OF_MESSAGE;
+    static constexpr std::string_view END_OF_MESSAGE{"."};
 
     /**
     ASCII charset label.
     **/
-    static const std::string CHARSET_ASCII;
+    static constexpr std::string_view CHARSET_ASCII{"ASCII"};
 
     /**
     UTF-8 charset label.
     **/
-    static const std::string CHARSET_UTF8;
+    static constexpr std::string_view CHARSET_UTF8{"UTF-8"};
 
     /**
     Attribute indicator for the charset and language parameters.
     **/
-    static const char ATTRIBUTE_CHARSET_SEPARATOR{'\''};
+    static constexpr char ATTRIBUTE_CHARSET_SEPARATOR{'\''};
 
     /**
     Attribute indicator for the charset and language parameters as string.
     **/
-    static const std::string ATTRIBUTE_CHARSET_SEPARATOR_STR;
+    static constexpr std::string_view ATTRIBUTE_CHARSET_SEPARATOR_STR{"'"};
 
     /**
     Line length policy.
@@ -328,7 +357,10 @@ public:
     @param line1_policy First line policy to set.
     @param lines_policy Other lines policy than the first one to set.
     **/
-    codec(std::string::size_type line1_policy, std::string::size_type lines_policy);
+    codec(std::string::size_type line1_policy, std::string::size_type lines_policy)
+        : line1_policy_(line1_policy), lines_policy_(lines_policy), strict_mode_(false)
+    {
+    }
 
     codec(const codec&) = delete;
 
@@ -348,14 +380,20 @@ public:
 
     @param mode True to enable strict mode, false to disable.
     **/
-    void strict_mode(bool mode);
+    void strict_mode(bool mode)
+    {
+        strict_mode_ = mode;
+    }
 
     /**
     Returning the strict mode status.
 
     @return True if strict mode enabled, false if disabled.
     **/
-    bool strict_mode() const;
+    bool strict_mode() const
+    {
+        return strict_mode_;
+    }
 
 protected:
 

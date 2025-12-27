@@ -19,8 +19,8 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <utility>
 #include <list>
 #include <tuple>
+#include <chrono>
 #include <boost/test/unit_test.hpp>
-#include <boost/date_time/posix_time/posix_time.hpp>
 #include <mailio/mailboxes.hpp>
 #include <mailio/message.hpp>
 
@@ -31,11 +31,6 @@ using std::ofstream;
 using std::list;
 using std::tuple;
 using std::make_tuple;
-using boost::posix_time::ptime;
-using boost::posix_time::time_from_string;
-using boost::local_time::time_zone_ptr;
-using boost::local_time::local_date_time;
-using boost::local_time::posix_time_zone;
 using mailio::string_t;
 #if defined(__cpp_char8_t)
 using mailio::u8string_t;
@@ -49,6 +44,17 @@ using mailio::mime_error;
 using mailio::message_error;
 using mailio::codec_error;
 
+// Helper function to create a zoned_time from local datetime components and UTC offset
+inline std::chrono::zoned_time<std::chrono::seconds> make_zoned_time(
+    int year, int month, int day, int hour, int minute, int second,
+    int offset_hours, int offset_minutes = 0)
+{
+    std::chrono::year_month_day ymd{std::chrono::year{year}, std::chrono::month{static_cast<unsigned>(month)}, std::chrono::day{static_cast<unsigned>(day)}};
+    auto local_tp = std::chrono::local_days{ymd} + std::chrono::hours{hour} + std::chrono::minutes{minute} + std::chrono::seconds{second};
+    auto offset = std::chrono::hours{offset_hours} + std::chrono::minutes{offset_minutes};
+    auto sys_tp = std::chrono::sys_time<std::chrono::seconds>{local_tp.time_since_epoch() - offset};
+    return std::chrono::zoned_time<std::chrono::seconds>{std::chrono::current_zone(), sys_tp};
+}
 
 #ifdef __cpp_char8_t
 #define utf8_string std::u8string
@@ -82,9 +88,7 @@ BOOST_AUTO_TEST_CASE(format_addresses)
     msg.add_bcc_recipient(mail_address("mailio", "adresa@mailio.dev"));
     msg.subject("Hello, World!");
     msg.content("Hello, World!");
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
 
     BOOST_CHECK(msg.from_to_string() == "mailio <adresa@mailio.dev>");
@@ -155,9 +159,7 @@ BOOST_AUTO_TEST_CASE(format_no_subject)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2025-05-20 19:28:17");
-    time_zone_ptr tz(new posix_time_zone("+02:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2025, 5, 20, 19, 28, 17, 2, 0);
     msg.date_time(ldt);
 
     string msg_str;
@@ -181,9 +183,7 @@ BOOST_AUTO_TEST_CASE(format_other_headers)
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
     msg.subject("Hello, World!");
     msg.content("Hello, World!");
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.add_header("User-Agent", "mailio");
     msg.add_header("Content-Language", "en-US");
@@ -225,9 +225,7 @@ BOOST_AUTO_TEST_CASE(format_dotted_no_escape)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format dotted no escape");
     msg.content(".Hello, World!\r\n"
@@ -272,9 +270,7 @@ BOOST_AUTO_TEST_CASE(format_dotted_escape)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format dotted escape");
     msg.content(".Hello, World!\r\n"
@@ -319,9 +315,7 @@ BOOST_AUTO_TEST_CASE(format_exports_bcc_headers_when_add_bcc_headers_is_set)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.add_bcc_recipient(mail_address("bcc_addr_1", "bcc_addr_1@mailio.dev"));
     msg.add_bcc_recipient(mail_address("bcc_addr_2", "bcc_addr_2@mailio.dev"));
@@ -350,9 +344,7 @@ BOOST_AUTO_TEST_CASE(format_does_not_exports_bcc_headers_when_add_bcc_headers_is
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.add_bcc_recipient(mail_address("bcc_addr_1", "bcc_addr_1@mailio.dev"));
     msg.subject("BCC addresses are not formatted");
@@ -380,9 +372,7 @@ BOOST_AUTO_TEST_CASE(format_long_text_default_default)
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format long text default default");
     msg.content("Ovo je jako dugachka poruka koja ima i praznih linija i predugachkih linija. Nije jasno kako ce se tekst prelomiti\r\n"
@@ -442,9 +432,7 @@ BOOST_AUTO_TEST_CASE(format_long_text_default_base64)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format long text default base64");
     msg.content_transfer_encoding(mime::content_transfer_encoding_t::BASE_64);
@@ -504,9 +492,7 @@ BOOST_AUTO_TEST_CASE(format_long_text_ascii_qp)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format long text ascii quoted printable");
     msg.content_transfer_encoding(mime::content_transfer_encoding_t::QUOTED_PRINTABLE);
@@ -567,9 +553,7 @@ BOOST_AUTO_TEST_CASE(format_long_text_utf8_base64)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format long text utf8 base64");
     msg.content_type(message::media_type_t::TEXT, "plain", "utf-8");
@@ -639,9 +623,7 @@ BOOST_AUTO_TEST_CASE(format_long_text_utf8_cyr_qp)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format long text utf8 cyrillic quoted printable");
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
@@ -747,9 +729,7 @@ BOOST_AUTO_TEST_CASE(format_long_text_utf8_lat_qp)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format long text utf8 latin quoted printable");
     msg.content_transfer_encoding(mime::content_transfer_encoding_t::QUOTED_PRINTABLE);
@@ -817,9 +797,7 @@ BOOST_AUTO_TEST_CASE(format_multipart_html_ascii_bit7_text_ascii_base64)
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.reply_address(mail_address("Tomislav Karastojkovic", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format multipart html ascii bit7 text ascii base64");
     msg.content_type(message::media_type_t::MULTIPART, "related");
@@ -877,9 +855,7 @@ BOOST_AUTO_TEST_CASE(format_multipart_html_ascii_qp_text_ascii_bit8)
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.reply_address(mail_address("Tomislav Karastojkovic", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format multipart html ascii qp text ascii bit8");
     msg.content_type(message::media_type_t::MULTIPART, "alternative");
@@ -938,9 +914,7 @@ BOOST_AUTO_TEST_CASE(format_related_html_default_base64_text_utf8_qp)
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.reply_address(mail_address("Tomislav Karastojkovic", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format related html default base64 text utf8 qp");
     msg.content_type(message::media_type_t::MULTIPART, "related");
@@ -1001,9 +975,7 @@ BOOST_AUTO_TEST_CASE(format_alternative_html_ascii_bit8_text_utf8_base64)
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.reply_address(mail_address("Tomislav Karastojkovic", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format alternative html ascii bit8 text utf8 base64");
     msg.content_type(message::media_type_t::MULTIPART, "alternative");
@@ -1067,9 +1039,7 @@ BOOST_AUTO_TEST_CASE(format_dotted_multipart)
     msg.add_recipient(mail_address("Tomislav Karastojkovic", "qwerty@gmail.com"));
     msg.add_recipient(mail_address("Tomislav Karastojkovic", "asdfgh@zoho.com"));
     msg.add_recipient(mail_address("Tomislav Karastojkovic", "zxcvbn@hotmail.com"));
-    ptime t = time_from_string("2016-03-15 13:13:32");
-    time_zone_ptr tz(new posix_time_zone("-00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 3, 15, 13, 13, 32, 0, 0);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.date_time(ldt);
     msg.subject("format dotted multipart");
@@ -1321,9 +1291,7 @@ BOOST_AUTO_TEST_CASE(format_long_multipart)
     msg.reply_address(mail_address("Tomislav Karastojkovic", "adresa@mailio.dev"));
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format long multipart");
     msg.content_type(message::media_type_t::MULTIPART, "related");
@@ -1540,9 +1508,7 @@ BOOST_AUTO_TEST_CASE(format_parse_nested_multipart)
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.reply_address(mail_address("Tomislav Karastojkovic", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.subject("format nested multipart");
     msg.content_type(message::media_type_t::MULTIPART, "related");
@@ -1611,9 +1577,7 @@ Formatting multipart message with both content and parts.
 BOOST_AUTO_TEST_CASE(format_multipart_content)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.reply_address(mail_address("mailio", "adresa@mailio.dev"));
@@ -1716,9 +1680,7 @@ Attaching a file with UTF-8 name in the base64 attribute codec.
 BOOST_AUTO_TEST_CASE(format_utf8_attachment_b64)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.date_time(ldt);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
@@ -1767,9 +1729,7 @@ Attaching a file with UTF-8 name in the quoted printable attribute codec.
 BOOST_AUTO_TEST_CASE(format_utf8_attachment_qp)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.date_time(ldt);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
@@ -1818,9 +1778,7 @@ Attaching a file with long UTF-8 message content.
 BOOST_AUTO_TEST_CASE(format_msg_att)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.reply_address(mail_address("Tomislav Karastojkovic", "adresa@mailio.dev"));
@@ -1952,9 +1910,7 @@ Attaching a text file together with an HTML message content.
 BOOST_AUTO_TEST_CASE(format_html_att)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.reply_address(mail_address("Tomislav Karastojkovic", "adresa@mailio.dev"));
@@ -2048,9 +2004,7 @@ BOOST_AUTO_TEST_CASE(format_notification)
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
     msg.disposition_notification(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject("format notification", codec::codec_t::BASE64);
     msg.content("Hello, World!");
@@ -2086,9 +2040,7 @@ BOOST_AUTO_TEST_CASE(format_qb_sender)
         "verzija 2017 ali kompatibilna i sa c plus plus 2020 a valjda i sa verzijom 2023", "adresa@mailio.dev"));
     msg.add_recipient(mail_address(string_t("Tomislav Karastojković", codec::CHARSET_UTF8, codec::codec_t::BASE64), "qwerty@gmail.com"));
     msg.add_recipient(mail_address(string_t("Томислав Карастојковић", codec::CHARSET_UTF8, codec::codec_t::BASE64), "asdfg@zoho.com"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject("format q base64 sender", codec::codec_t::BASE64);
     msg.content("test");
@@ -2130,9 +2082,7 @@ BOOST_AUTO_TEST_CASE(format_qq_sender)
         "verzija 2017 ali kompatibilna i sa c plus plus 2020 a valjda i sa verzijom 2023", "adresa@mailio.dev"));
     msg.add_recipient(mail_address(string_t("Tomislav Karastojković", codec::CHARSET_UTF8, codec::codec_t::QUOTED_PRINTABLE), "qwerty@gmail.com"));
     msg.add_recipient(mail_address(string_t("Томислав Карастојковић", codec::CHARSET_UTF8, codec::codec_t::QUOTED_PRINTABLE), "asdfg@zoho.com"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject("format q quoted printable sender", codec::codec_t::QUOTED_PRINTABLE);
     msg.content("test");
@@ -2170,9 +2120,7 @@ BOOST_AUTO_TEST_CASE(format_qb_long_subject)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.subject_raw(string_t("Re: Σχετ: Request from GrckaInfo visitor - Eleni Beach Apartments", "utf-8", codec::codec_t::BASE64));
@@ -2202,9 +2150,7 @@ BOOST_AUTO_TEST_CASE(format_qq_long_subject)
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject_raw(string_t("Re: Σχετ: Request from GrckaInfo visitor - Eleni Beach Apartments", "utf-8", codec::codec_t::QUOTED_PRINTABLE));
     msg.content("Hello, Sithonia!");
@@ -2232,9 +2178,7 @@ BOOST_AUTO_TEST_CASE(format_qq_subject_dash)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
 #if defined(__cpp_char8_t)
     msg.subject_raw(u8string_t(u8"C++ Annotated: Sep \u2013 Dec 2017", "utf-8", codec::codec_t::QUOTED_PRINTABLE));
@@ -2266,9 +2210,7 @@ BOOST_AUTO_TEST_CASE(format_qq_subject_emoji)
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
 #if defined(__cpp_char8_t)
     msg.subject_raw(u8string_t(u8"\U0001F381\u017Divi godinu dana na ra\u010Dun Super Kartice", "utf-8", codec::codec_t::QUOTED_PRINTABLE));
@@ -2298,9 +2240,7 @@ Attaching a file with the long ASCII name to show the attribute continuation wit
 BOOST_AUTO_TEST_CASE(format_continued_ascii_attachment_bit7)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
@@ -2356,9 +2296,7 @@ Attaching a file with the long UTF-8 name to show the attribute continuation wit
 BOOST_AUTO_TEST_CASE(format_continued_utf8_attachment_b64)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
@@ -2407,9 +2345,7 @@ Attaching a file with the long UTF-8 name to show the attribute continuation wit
 BOOST_AUTO_TEST_CASE(format_continued_utf8_attachment_qp)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
@@ -2458,9 +2394,7 @@ Attaching a file with the long UTF-8 name to show the attribute continuation wit
 BOOST_AUTO_TEST_CASE(format_continued_utf8_attachment_pct)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
@@ -2510,9 +2444,7 @@ BOOST_AUTO_TEST_CASE(format_utf8_subject)
 {
     message msg;
     msg.line_policy(codec::line_len_policy_t::MANDATORY);
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.from(mail_address(string_t("Tomislav Karastojković", codec::CHARSET_UTF8, codec::codec_t::UTF8), "qwerty@hotmail.com"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
@@ -2538,9 +2470,7 @@ Formatting ISO 8859-1 subject in combination with the UTF8 header.
 BOOST_AUTO_TEST_CASE(format_iso8859_subject_utf8_header)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.from(mail_address(string_t("Comprobaci\363n CV", "ISO-8859-1", codec::codec_t::UTF8), "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
@@ -2569,9 +2499,7 @@ BOOST_AUTO_TEST_CASE(format_qb_utf8_subject_raw)
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject_raw(string_t("Re: Σχετ: Request from GrckaInfo visitor - Eleni Beach Apartments", "utf-8", codec::codec_t::BASE64));
     msg.content("Hello, Sithonia!");
@@ -2601,9 +2529,7 @@ BOOST_AUTO_TEST_CASE(format_many_codecs)
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address(string_t("маилио", "UTF-8", codec::codec_t::QUOTED_PRINTABLE), "adresa@mailio.dev"));
     msg.add_recipient(mail_address(string_t("Томислав Карастојковић", codec::CHARSET_UTF8, codec::codec_t::BASE64), "qwerty@gmail.com"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject_raw(string_t("Re: Σχετ: Request from GrckaInfo visitor - Eleni Beach Apartments", "utf-8", codec::codec_t::BASE64));
     msg.content("Hello, Sithonia!");
@@ -2633,9 +2559,7 @@ BOOST_AUTO_TEST_CASE(format_message_id)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.strict_mode(true);
     msg.date_time(ldt);
     msg.subject("format message id", codec::codec_t::QUOTED_PRINTABLE);
@@ -2671,9 +2595,7 @@ BOOST_AUTO_TEST_CASE(format_long_message_id)
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.strict_mode(true);
     msg.date_time(ldt);
     msg.subject("format long message id", codec::codec_t::QUOTED_PRINTABLE);
@@ -2707,9 +2629,7 @@ BOOST_AUTO_TEST_CASE(format_message_id_no_monkey_strict)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.strict_mode(true);
     msg.date_time(ldt);
     msg.subject("Proba");
@@ -2729,9 +2649,7 @@ BOOST_AUTO_TEST_CASE(format_message_id_no_monkey_non_strict)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject("format message id no monkey non strict", codec::codec_t::QUOTED_PRINTABLE);
     msg.content("Zdravo, Svete!");
@@ -2760,9 +2678,7 @@ BOOST_AUTO_TEST_CASE(format_message_id_with_space_strict)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.strict_mode(true);
     msg.date_time(ldt);
     msg.subject("Proba");
@@ -2782,9 +2698,7 @@ BOOST_AUTO_TEST_CASE(format_message_id_with_space_non_strict)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject("format message id with space non strict", codec::codec_t::QUOTED_PRINTABLE);
     msg.content("Zdravo, Svete!");
@@ -2813,9 +2727,7 @@ BOOST_AUTO_TEST_CASE(format_in_reply_to)
     message msg;
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject("format in reply to", codec::codec_t::QUOTED_PRINTABLE);
     msg.content("Zdravo, Svete!");
@@ -2850,9 +2762,7 @@ BOOST_AUTO_TEST_CASE(format_in_reply_to_folding)
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject("format in reply to folding", codec::codec_t::QUOTED_PRINTABLE);
     msg.content("Zdravo, Svete!");
@@ -2893,9 +2803,7 @@ BOOST_AUTO_TEST_CASE(format_recommended_recipient)
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
     msg.add_recipient(mail_address(string_t("Tomislav Karastojković", codec::CHARSET_UTF8, codec::codec_t::BASE64), "qwerty@gmail.com"));
     msg.add_recipient(mail_address(string_t("Томислав Карастојковић", codec::CHARSET_UTF8, codec::codec_t::BASE64), "asdfg@zoho.com"));
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.subject("format recommended recipient", codec::codec_t::BASE64);
     msg.content("test");
@@ -2924,9 +2832,7 @@ BOOST_AUTO_TEST_CASE(format_long_subject)
 {
     message msg;
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.from(mail_address(string_t("Tomislav Karastojković", codec::CHARSET_UTF8, codec::codec_t::UTF8), "qwerty@hotmail.com"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
@@ -2975,9 +2881,7 @@ BOOST_AUTO_TEST_CASE(format_long_header)
     msg.add_recipient(mail_group("all", {mail_address("Tomislav", "qwerty@hotmail.com")}));
     msg.subject("Hello, World!");
     msg.content("Hello, World!");
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg.date_time(ldt);
     msg.add_header("Proba", "12345678901234567890 1234567890123456789012345678901234567890123456789012345678901234567890 12345678901234567890@mailio.dev");
 
@@ -3025,9 +2929,7 @@ BOOST_AUTO_TEST_CASE(format_long_from)
     {
         message msg;
         msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
-        ptime t = time_from_string("2016-02-11 22:56:22");
-        time_zone_ptr tz(new posix_time_zone("+00:00"));
-        local_date_time ldt(t, tz);
+        auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
         msg.date_time(ldt);
         msg.from(mail_address(string_t("Томислав      Карастојковић", codec::CHARSET_UTF8, codec::codec_t::BASE64), "tomislavkarastojkovic@hotmail.com"));
         msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
@@ -3047,9 +2949,7 @@ BOOST_AUTO_TEST_CASE(format_long_from)
     {
         message msg;
         msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
-        ptime t = time_from_string("2016-02-11 22:56:22");
-        time_zone_ptr tz(new posix_time_zone("+00:00"));
-        local_date_time ldt(t, tz);
+        auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
         msg.date_time(ldt);
         msg.from(mail_address(string_t("Zdravo,Svete! Zdravo,Svete! Zdravo,Svete! Zdravo,Svete! Zdravo,Svete! Zdravo,Svete!"), "zdravosvete@hotmail.com"));
         msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
@@ -3069,9 +2969,7 @@ BOOST_AUTO_TEST_CASE(format_long_from)
     {
         message msg;
         msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
-        ptime t = time_from_string("2016-02-11 22:56:22");
-        time_zone_ptr tz(new posix_time_zone("+00:00"));
-        local_date_time ldt(t, tz);
+        auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
         msg.date_time(ldt);
         msg.from(mail_address(string_t("ZdravoSveteZdravoSveteZdravoSveteZdravoSveteZdravoSveteZdravoSveteZdravoSveteZdravo"), "zdravosvete@hotmail.com"));
         msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
@@ -3102,9 +3000,7 @@ BOOST_AUTO_TEST_CASE(format_content_type_attributes)
 {
     message msg;
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.from(mail_address(string_t("mailio", codec::CHARSET_UTF8, codec::codec_t::UTF8), "adresa@mailio.dev"));
     msg.add_recipient(mail_address("mailio", "adresa@mailio.dev"));
@@ -3150,9 +3046,7 @@ BOOST_AUTO_TEST_CASE(parse_simple)
         "opa bato\r\n";
     message msg;
 
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.parse(msg_str);
     BOOST_CHECK(msg.from().addresses.at(0).name == "mail io" &&
         msg.from().addresses.at(0).name.charset == "ASCII" &&
@@ -4381,9 +4275,7 @@ BOOST_AUTO_TEST_CASE(parse_multipart_html_ascii_bit7_plain_utf8_base64)
         "--my_bound--\r\n";
     msg.parse(msg_str);
 
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     BOOST_CHECK(msg.content_type().boundary() == "my_bound" && msg.subject() == "parse multipart html ascii bit7 plain utf8 base64" && msg.date_time() == ldt &&
         msg.from_to_string() == "mailio <adresa@mailio.dev>" && msg.recipients().addresses.size() == 1 &&
         msg.content_type().media_type() == mime::media_type_t::MULTIPART && msg.content_type().media_subtype() == "alternative" && msg.parts().size() == 2);
@@ -4432,9 +4324,7 @@ BOOST_AUTO_TEST_CASE(parse_multipart_html_ascii_qp_plain_ascii_bit8)
         "--my_bound--\r\n";
     msg.parse(msg_str);
 
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     BOOST_CHECK(msg.subject() == "parse multipart html ascii qp plain ascii bit8" &&  msg.content_type().boundary() == "my_bound" && msg.date_time() == ldt &&
         msg.from_to_string() == "mailio <adresa@mailio.dev>" && msg.recipients().addresses.size() == 1 &&
         msg.content_type().media_type() == mime::media_type_t::MULTIPART && msg.content_type().media_subtype() == "alternative" && msg.parts().size() == 2);
@@ -4483,9 +4373,7 @@ BOOST_AUTO_TEST_CASE(parse_multipart_html_default_base64_text_utf8_qp)
         "--my_bound--\r\n";
     msg.parse(msg_str);
 
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     BOOST_CHECK(msg.subject() == "parse multipart html default base64 text utf8 qp" &&  msg.content_type().boundary() == "my_bound" && msg.date_time() == ldt &&
         msg.from_to_string() == "mailio <adresa@mailio.dev>" && msg.recipients().addresses.size() == 1 &&
         msg.content_type().media_type() == mime::media_type_t::MULTIPART && msg.content_type().media_subtype() == "related" && msg.parts().size() == 2);
@@ -4532,9 +4420,7 @@ BOOST_AUTO_TEST_CASE(parse_multipart_html_ascii_base64_plain_ascii_bit7)
         "--my_bound--\r\n";
     msg.parse(msg_str);
 
-    ptime t = time_from_string("2016-02-12 12:22:22");
-    time_zone_ptr tz(new posix_time_zone("+01:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 12, 12, 22, 22, 1, 0);
     BOOST_CHECK(msg.subject() == "parse multipart html ascii base64 plain ascii bit7" &&  msg.content_type().boundary() == "my_bound" && msg.date_time() == ldt &&
         msg.from_to_string() == "mailio <adresa@mailio.dev>" && msg.recipients().addresses.size() == 2 &&
         msg.content_type().media_type() == mime::media_type_t::MULTIPART && msg.content_type().media_subtype() == "related" && msg.parts().size() == 2);
@@ -4626,9 +4512,7 @@ BOOST_AUTO_TEST_CASE(parse_dotted_multipart_no_esc)
         "--my_bound--\r\n";
     msg.parse(msg_str, false);
 
-    ptime t = time_from_string("2016-03-15 13:13:32");
-    time_zone_ptr tz(new posix_time_zone("-00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 3, 15, 13, 13, 32, 0, 0);
     BOOST_CHECK(msg.subject() == "parse dotted multipart no esc" && msg.content_type().boundary() == "my_bound" &&
         msg.date_time() == ldt && msg.from_to_string() == "mailio <adresa@mailio.dev>" && msg.recipients().addresses.size() == 4 &&
         msg.content_type().media_type() == mime::media_type_t::MULTIPART && msg.content_type().media_subtype() == "related" && msg.parts().size() == 4);
@@ -4772,9 +4656,7 @@ BOOST_AUTO_TEST_CASE(parse_dotted_multipart_esc)
         "--my_bound--\r\n";
     msg.parse(msg_str, true);
 
-    ptime t = time_from_string("2016-03-15 13:13:32");
-    time_zone_ptr tz(new posix_time_zone("-00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 3, 15, 13, 13, 32, 0, 0);
     BOOST_CHECK(msg.subject() == "parse dotted multipart esc" && msg.content_type().boundary() == "my_bound" &&
         msg.date_time() == ldt && msg.from_to_string() == "mailio <adresa@mailio.dev>" && msg.recipients().addresses.size() == 4 &&
         msg.content_type().media_type() == mime::media_type_t::MULTIPART && msg.content_type().media_subtype() == "related" && msg.parts().size() == 4);
@@ -4977,9 +4859,7 @@ BOOST_AUTO_TEST_CASE(parse_long_multipart)
         "--my_bound--\r\n";
     msg.parse(msg_str);
 
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     BOOST_CHECK(msg.subject() == "parse long multipart" &&  msg.content_type().boundary() == "my_bound" && msg.date_time() == ldt &&
         msg.from_to_string() == "mailio <adresa@mailio.dev>" && msg.recipients().addresses.size() == 1 &&
         msg.content_type().media_type() == mime::media_type_t::MULTIPART && msg.content_type().media_subtype() == "related" && msg.parts().size() == 4);
@@ -5078,9 +4958,7 @@ BOOST_AUTO_TEST_CASE(parse_multipart_content)
         "--my_bound--\r\n";
     msg.parse(msg_str);
 
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     BOOST_CHECK(msg.subject() == "parse multipart content" && msg.content() == "This is a multipart message." && msg.content_type().boundary() == "my_bound" &&
         msg.date_time() == ldt && msg.from_to_string() == "mailio <adresa@mailio.dev>" && msg.recipients().addresses.size() == 3 &&
         msg.content_type().media_type() == mime::media_type_t::MULTIPART && msg.content_type().media_subtype() == "alternative" && msg.parts().size() == 2 &&
@@ -5162,9 +5040,7 @@ Parsing attachments and an HTML content of a message.
 BOOST_AUTO_TEST_CASE(parse_html_attachment)
 {
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.date_time(ldt);
     msg.from(mail_address("mailio", "adresa@mailio.dev"));
     msg.reply_address(mail_address("Tomislav Karastojkovic", "adresa@mailio.dev"));
@@ -5443,9 +5319,7 @@ BOOST_AUTO_TEST_CASE(parse_qb_utf8_subject)
         "hello world\r\n";
     message msg;
 
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.parse(msg_str);
     BOOST_CHECK(msg.from().addresses.at(0).name == "mail io" && msg.from().addresses.at(0).address == "adre.sa@mailio.dev" && msg.date_time() == ldt &&
         msg.recipients_to_string() == "mailio <adresa@mailio.dev>" && msg.subject_raw().buffer == "Re: Σχετ: Summer 2017" &&
@@ -5469,9 +5343,7 @@ BOOST_AUTO_TEST_CASE(parse_qq_latin1_subject_raw)
         "hello world\r\n";
     message msg;
 
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.parse(msg_str);
 
     BOOST_CHECK(msg.from().addresses.at(0).name == "mailio" && msg.from().addresses.at(0).address == "adresa@mailio.dev" && msg.date_time() == ldt &&
@@ -5533,9 +5405,7 @@ BOOST_AUTO_TEST_CASE(parse_qq_long_subject)
         "opa bato\r\n";
     message msg;
 
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.parse(msg_str);
     BOOST_CHECK(msg.from().addresses.at(0).name == "mail io" && msg.from().addresses.at(0).address == "adre.sa@mailio.dev" && msg.date_time() == ldt &&
@@ -5568,9 +5438,7 @@ BOOST_AUTO_TEST_CASE(parse_qb_long_subject)
 
     {
         message msg;
-        ptime t = time_from_string("2016-02-11 22:56:22");
-        time_zone_ptr tz(new posix_time_zone("+00:00"));
-        local_date_time ldt(t, tz);
+        auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
         msg.line_policy(codec::line_len_policy_t::MANDATORY);
         msg.parse(msg_str);
         BOOST_CHECK(msg.from().addresses.at(0).name == "mail io" && msg.from().addresses.at(0).address == "adre.sa@mailio.dev" && msg.date_time() == ldt &&
@@ -5607,9 +5475,7 @@ BOOST_AUTO_TEST_CASE(parse_qbq_long_subject)
         "\r\n"
         "opa bato\r\n";
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.parse(msg_str);
     BOOST_CHECK(msg.from().addresses.at(0).name == "mail io" && msg.from().addresses.at(0).address == "adre.sa@mailio.dev" && msg.date_time() == ldt &&
@@ -5634,9 +5500,7 @@ BOOST_AUTO_TEST_CASE(parse_qq_subject_dash)
         "\r\n"
         "test\r\n";
     message msg;
-    ptime t = time_from_string("2016-02-11 22:56:22");
-    time_zone_ptr tz(new posix_time_zone("+00:00"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
     msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
     msg.parse(msg_str);
     BOOST_CHECK(msg.subject() == "C++ Annotated: Sep – Dec 2017");
@@ -5659,9 +5523,7 @@ BOOST_AUTO_TEST_CASE(parse_qq_subject_emoji)
         "test\r\n";
     {
         message msg;
-        ptime t = time_from_string("2016-02-11 22:56:22");
-        time_zone_ptr tz(new posix_time_zone("+00:00"));
-        local_date_time ldt(t, tz);
+        auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
         msg.line_policy(codec::line_len_policy_t::MANDATORY);
         msg.parse(msg_str);
         BOOST_CHECK(msg.subject_raw().buffer == "🎁Živi godinu dana na račun Super Kartice" && msg.subject_raw().charset == "UTF-8" &&
@@ -5691,9 +5553,7 @@ BOOST_AUTO_TEST_CASE(parse_qq_subject_long)
         "test\r\n";
     {
         message msg;
-        ptime t = time_from_string("2016-02-11 22:56:22");
-        time_zone_ptr tz(new posix_time_zone("+00:00"));
-        local_date_time ldt(t, tz);
+        auto ldt = make_zoned_time(2016, 2, 11, 22, 56, 22, 0, 0);
         msg.line_policy(codec::line_len_policy_t::MANDATORY);
         msg.parse(msg_str);
 #if defined(__cpp_char8_t)
@@ -6234,9 +6094,7 @@ BOOST_AUTO_TEST_CASE(object_copying)
     msg1.add_bcc_recipient(mail_address("mailio", "adresa@mailio.dev"));
     msg1.subject("Hello, World!");
     msg1.content("Hello, World!");
-    ptime t = time_from_string("2014-01-17 13:09:22");
-    time_zone_ptr tz(new posix_time_zone("-07:30"));
-    local_date_time ldt(t, tz);
+    auto ldt = make_zoned_time(2014, 1, 17, 13, 9, 22, -7, -30);
     msg1.date_time(ldt);
 
     string msg1_str;

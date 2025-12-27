@@ -966,6 +966,8 @@ protected:
 
     The content is in the form as presented to the user, thus no limits such as line policy are applied here. For such purpose, the format method
     is used,
+    
+    @todo Consider using std::vector<std::uint8_t> for binary content (attachments, encoded data).
     **/
     std::string content_;
 

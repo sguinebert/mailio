@@ -23,306 +23,25 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <map>
 #include <utility>
 #include <istream>
+#include <sstream>
 #include <chrono>
 #include <optional>
+#include <stdexcept>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/use_awaitable.hpp>
 #include <boost/asio/streambuf.hpp>
 #include "dialog.hpp"
 #include "message.hpp"
-#include "export.hpp"
+
+#ifndef MAILIO_EXPORT
+#define MAILIO_EXPORT
+#endif
 
 
 namespace mailio
 {
-
-
-/**
-POP3 client implementation.
-
-The order of connection is prioritized as: start tls, ssl, plain tcp. By default, POP3 tries to connect over start tls. If the start tls is switched off, then it
-connects over ssl. If the ssl is switched off, then it connects over plain tcp.
-
-The start tls needs ssl options to be set so they could be used once the connection is switched from tcp to tls. For that reason, the ssl options are
-internally set to default values, but they can be modified over `ssl_options()`. If a user does not want the start tls, it can turn it off over
-`start_tls(false)`. Turning off the start tls switches POP3 to the ssl connection. In order to switch off ssl completely, it has to be done explicitly by setting
-`ssl_options(std::nullopt)`. With both start tls and ssl switched off, the POP3 connection is plain tcp.
-**/
-class MAILIO_EXPORT pop3
-{
-public:
-
-    /**
-    Available authentication methods.
-
-    The following mechanisms are allowed:
-    - LOGIN: The username and password are sent in plain format.
-    **/
-    enum class auth_method_t {LOGIN};
-
-    /**
-    Messages indexed by their order number containing sizes in octets.
-    **/
-    typedef std::map<unsigned, unsigned long> message_list_t;
-
-    /**
-    Message order numbers and their corresponding unique IDs (a UIDL response from server).
-    **/
-    typedef std::map<unsigned, std::string> uidl_list_t;
-
-    /**
-    Mailbox statistics structure.
-    **/
-    struct mailbox_stat_t
-    {
-        /**
-        Number of messages in the mailbox.
-        **/
-        unsigned int messages_no;
-
-        /**
-        Size of the mailbox.
-        **/
-        unsigned long mailbox_size;
-
-        /**
-        Setting the number of messages and mailbox size to zero.
-        **/
-        mailbox_stat_t() : messages_no(0), mailbox_size(0)
-        {
-        }
-    };
-
-    /**
-    Making connection to a server.
-
-    @param hostname Hostname of the server.
-    @param port     Port of the server.
-    @param timeout  Network timeout after which I/O operations fail. If zero, then no timeout is set i.e. I/O operations are synchronous.
-    @throw *        `dialog::dialog(const string&, unsigned)`.
-    **/
-    pop3(const std::string& hostname, unsigned port, std::chrono::milliseconds timeout = std::chrono::milliseconds(0));
-
-    /**
-    Sending the quit command and closing the connection.
-    **/
-    virtual ~pop3();
-
-    pop3(const pop3&) = delete;
-
-    pop3(pop3&&) = delete;
-
-    void operator=(const pop3&) = delete;
-
-    void operator=(pop3&&) = delete;
-
-    /**
-    Authentication with the given credentials.
-
-    The method should be called only once on an existing object - it is not possible to authenticate again within the same connection.
-
-    @param username Username to authenticate.
-    @param password Password to authenticate.
-    @param method   Authentication method to use.
-    @return         The server greeting message.
-    @throw *        `connect()`, `auth_login(const string&, const string&)`.
-    **/
-    std::string authenticate(const std::string& username, const std::string& password, auth_method_t method);
-
-    /**
-    Listing the size in octets of a message or all messages in a mailbox.
-
-    @param message_no Number of the message to list. If zero, then all messages are listed.
-    @return           Message list.
-    @throw pop3_error Listing message failure.
-    @throw pop3_error Listing all messages failure.
-    @throw pop3_error Parser failure.
-    @throw *          `parse_status(const string&)`, `dialog::send(const string&)`, `dialog::receive()`.
-    @todo             This method is perhaps useless and should be removed.
-    **/
-    message_list_t list(unsigned message_no = 0);
-
-    /**
-    Getting the unique ID of a message or all messages in a mailbox (UIDL command; might not be supported by server).
-
-    @param message_no Number of the message to get ID for. If zero, then all messages are listed.
-    @return           Uidl list.
-    @throw pop3_error Listing message failure.
-    @throw pop3_error Listing all messages failure.
-    @throw pop3_error Parser failure.
-    @throw *          `parse_status(const string&)`, `dialog::send(const string&)`, `dialog::receive()`.
-    **/
-    uidl_list_t uidl(unsigned message_no = 0);
-
-    /**
-    Fetching the mailbox statistics.
-
-    @return           Number of messages and mailbox size in octets.
-    @throw pop3_error Reading statistics failure.
-    @throw pop3_error Parser failure.
-    @throw *          `parse_status(const string&)`, `dialog::send(const string&)`, `dialog::receive()`.
-    **/
-    mailbox_stat_t statistics();
-
-    /**
-    Fetching a message.
-
-    The flag for fetching the header only uses a different POP3 command (than for retrieving the full messsage) which is not mandatory by POP3. In case the
-    command fails, the method will not report an error but rather the `msg` parameter will be empty.
-
-    @param message_no  Message number to fetch.
-    @param msg         Fetched message.
-    @param header_only Flag if only the message header should be fetched.
-    @throw pop3_error  Fetching message failure.
-    @throw *          `parse_status(const string&)`, `dialog::send(const string&)`, `dialog::receive()`.
-    **/
-    void fetch(unsigned long message_no, message& msg, bool header_only = false);
-
-    /**
-    Removing a message in the mailbox.
-
-    @param message_no Message number to remove.
-    @throw pop3_error Removing message failure.
-    @throw *          `parse_status(const string&)`, `dialog::send(const string&)`, `dialog::receive()`.
-    **/
-    void remove(unsigned long message_no);
-
-    /**
-    Setting the start TLS option.
-
-    @param is_tls If true, the start TLS option is turned on, otherwise is turned off.
-    **/
-    void start_tls(bool is_tls);
-
-    /**
-    Setting SSL options.
-
-    @param options SSL options to set.
-    **/
-    void ssl_options(const std::optional<dialog_ssl::ssl_options_t> options = std::nullopt);
-
-protected:
-
-    /**
-    Character used by POP3 to separate tokens.
-    **/
-    static const char TOKEN_SEPARATOR_CHAR{' '};
-
-    /**
-    Initializing a connection to the server.
-
-    @return           The server greeting message.
-    @throw pop3_error Connection to server failure.
-    @throw *          `parse_status(const string&)`, `dialog::receive()`.
-    **/
-    std::string connect();
-
-    /**
-    Authentication of a user.
-
-    @param username    Username to authenticate.
-    @param password    Password to authenticate.
-    @throw pop3_error  Username rejection.
-    @throw pop3_error  Password rejection.
-    @throw *           `parse_status(const string&)`, `dialog::send(const string&)`, `dialog::receive()`.
-    **/
-    void auth_login(const std::string& username, const std::string& password);
-
-    /**
-    Switching to TLS layer.
-
-    @throw pop3_error Start TLS failure.
-    @throw *          `parse_status(const string&)`, `dialog::send(const string&)`, `dialog::receive()`, `dialog::to_ssl()`.
-    **/
-    void switch_tls();
-
-    /**
-    Parsing a response line for the status.
-
-    @param line       Response line to parse.
-    @return           Tuple with the status and rest of the line.
-    @throw pop3_error Response status unknown.
-    **/
-    std::tuple<std::string, std::string> parse_status(const std::string& line);
-
-    /**
-    Dialog to use for send/receive operations.
-    **/
-    std::shared_ptr<dialog> dlg_;
-
-    /**
-    SSL options to set.
-    **/
-    std::optional<dialog_ssl::ssl_options_t> ssl_options_;
-
-    /**
-    Flag to switch to the TLS.
-    **/
-    bool is_start_tls_;
-};
-
-
-/**
-Secure version of POP3 client.
-**/
-class MAILIO_DEPRECATED pop3s : public pop3
-{
-public:
-
-    /**
-    Available authentication methods over the TLS connection.
-
-    The following mechanisms are allowed:
-    - LOGIN: The username and password are sent in plain format.
-    - START_TLS: For the TCP connection, a TLS negotiation is asked before sending the login parameters.
-    **/
-    enum class auth_method_t {LOGIN, START_TLS};
-
-    /**
-    Making a connection to server.
-
-    Parent constructor is called to do all the work.
-
-    @param hostname Hostname of the server.
-    @param port     Port of the server.
-    @param timeout  Network timeout after which I/O operations fail. If zero, then no timeout is set i.e. I/O operations are synchronous.
-    @throw *        `pop3::pop3(const string&, unsigned)`.
-    **/
-    pop3s(const std::string& hostname, unsigned port, std::chrono::milliseconds timeout = std::chrono::milliseconds(0));
-
-    /**
-    Sending the quit command and closing the connection.
-
-    Parent destructor is called to do all the work.
-    **/
-    ~pop3s() = default;
-
-    pop3s(const pop3s&) = delete;
-
-    pop3s(pop3s&&) = delete;
-
-    void operator=(const pop3s&) = delete;
-
-    void operator=(pop3s&&) = delete;
-
-    /**
-    Authenticating with the given credentials.
-
-    @param username Username to authenticate.
-    @param password Password to authenticate.
-    @param method   Authentication method to use.
-    @return         The server greeting message.
-    @throw *        `start_tls()`, `pop3::auth_login(const string&, const string&)`.
-    **/
-    std::string authenticate(const std::string& username, const std::string& password, auth_method_t method);
-
-    /**
-    Setting SSL options.
-
-    @param options SSL options to set.
-    **/
-    void ssl_options(const dialog_ssl::ssl_options_t& options);
-};
 
 
 /**
@@ -331,34 +50,283 @@ Error thrown by POP3 client.
 class pop3_error : public dialog_error
 {
 public:
-
-    /**
-    Calling the parent constructor.
-
-    @param msg     Error message.
-    @param details Detailed message.
-    **/
-    pop3_error(const std::string& msg, const std::string& details);
-
-    /**
-    Calling the parent constructor.
-
-    @param msg     Error message.
-    @param details Detailed message.
-    **/
-    pop3_error(const char* msg, const std::string& details);
-
-    pop3_error(const pop3_error&) = default;
-
-    pop3_error(pop3_error&&) = default;
-
-    ~pop3_error() = default;
-
-    pop3_error& operator=(const pop3_error&) = default;
-
-    pop3_error& operator=(pop3_error&&) = default;
+    pop3_error(const std::string& msg, const std::string& details) : dialog_error(msg, details) {}
+    pop3_error(const char* msg, const std::string& details) : dialog_error(msg, details) {}
 };
 
+
+/**
+Base class for POP3 client containing common logic and constants.
+**/
+class pop3_base
+{
+public:
+    enum class auth_method_t {LOGIN};
+
+    typedef std::map<unsigned, unsigned long> message_list_t;
+    typedef std::map<unsigned, std::string> uidl_list_t;
+
+    struct mailbox_stat_t
+    {
+        unsigned int messages_no;
+        unsigned long mailbox_size;
+        mailbox_stat_t() : messages_no(0), mailbox_size(0) {}
+    };
+
+protected:
+    static const char TOKEN_SEPARATOR_CHAR = ' ';
+    inline static const std::string OK_RESPONSE = "+OK";
+    inline static const std::string ERR_RESPONSE = "-ERR";
+    inline static const std::string END_OF_DATA = ".";
+
+    static std::tuple<std::string, std::string> parse_status(const std::string& line)
+    {
+        std::string::size_type pos = line.find(TOKEN_SEPARATOR_CHAR);
+        std::string status = line.substr(0, pos);
+        std::string rest = (pos != std::string::npos) ? line.substr(pos + 1) : "";
+        if (status != OK_RESPONSE && status != ERR_RESPONSE)
+            throw pop3_error("Unknown response status.", line);
+        return std::make_tuple(status, rest);
+    }
+    
+    static bool is_ok(const std::string& status) { return status == OK_RESPONSE; }
+};
+
+
+/**
+POP3 client implementation template.
+**/
+template<typename Stream>
+class pop3_client : public pop3_base
+{
+public:
+    using dialog_type = dialog<Stream>;
+
+    pop3_client(Stream stream) : dlg_(std::move(stream)) {}
+    virtual ~pop3_client() = default;
+
+    template<typename CompletionToken>
+    auto async_read_greeting(CompletionToken&& token)
+    {
+        return boost::asio::co_spawn(dlg_.stream().get_executor(),
+            [this]() -> boost::asio::awaitable<std::string> {
+                co_return co_await this->read_greeting_impl();
+            }, std::forward<CompletionToken>(token));
+    }
+
+    template<typename CompletionToken>
+    auto async_authenticate(std::string username, std::string password, auth_method_t method, CompletionToken&& token)
+    {
+        return boost::asio::co_spawn(dlg_.stream().get_executor(),
+            [this, username = std::move(username), password = std::move(password), method]() -> boost::asio::awaitable<std::string> {
+                std::string greeting = co_await this->read_greeting_impl();
+                co_await this->auth_login_impl(username, password);
+                co_return greeting;
+            }, std::forward<CompletionToken>(token));
+    }
+
+    template<typename CompletionToken>
+    auto async_list(unsigned message_no, CompletionToken&& token)
+    {
+        return boost::asio::co_spawn(dlg_.stream().get_executor(),
+            [this, message_no]() -> boost::asio::awaitable<message_list_t> {
+                co_return co_await this->list_impl(message_no);
+            }, std::forward<CompletionToken>(token));
+    }
+
+    template<typename CompletionToken>
+    auto async_uidl(unsigned message_no, CompletionToken&& token)
+    {
+        return boost::asio::co_spawn(dlg_.stream().get_executor(),
+            [this, message_no]() -> boost::asio::awaitable<uidl_list_t> {
+                co_return co_await this->uidl_impl(message_no);
+            }, std::forward<CompletionToken>(token));
+    }
+
+    template<typename CompletionToken>
+    auto async_statistics(CompletionToken&& token)
+    {
+        return boost::asio::co_spawn(dlg_.stream().get_executor(),
+            [this]() -> boost::asio::awaitable<mailbox_stat_t> {
+                co_return co_await this->statistics_impl();
+            }, std::forward<CompletionToken>(token));
+    }
+
+    template<typename CompletionToken>
+    auto async_fetch(unsigned long message_no, bool header_only, CompletionToken&& token)
+    {
+        return boost::asio::co_spawn(dlg_.stream().get_executor(),
+            [this, message_no, header_only]() -> boost::asio::awaitable<message> {
+                co_return co_await this->fetch_impl(message_no, header_only);
+            }, std::forward<CompletionToken>(token));
+    }
+
+    template<typename CompletionToken>
+    auto async_remove(unsigned long message_no, CompletionToken&& token)
+    {
+        return boost::asio::co_spawn(dlg_.stream().get_executor(),
+            [this, message_no]() -> boost::asio::awaitable<void> {
+                co_await this->remove_impl(message_no);
+            }, std::forward<CompletionToken>(token));
+    }
+
+    template<typename CompletionToken>
+    auto async_quit(CompletionToken&& token)
+    {
+        return boost::asio::co_spawn(dlg_.stream().get_executor(),
+            [this]() -> boost::asio::awaitable<void> {
+                co_await this->quit_impl();
+            }, std::forward<CompletionToken>(token));
+    }
+
+    template<typename SSLContext>
+    boost::asio::awaitable<pop3_client<boost::asio::ssl::stream<Stream>>> starttls(SSLContext& context)
+    {
+        co_await dlg_.async_send("STLS", boost::asio::use_awaitable);
+        std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+        auto [status, msg] = parse_status(line);
+        if (!is_ok(status))
+            throw pop3_error("STARTTLS failure.", msg);
+
+        Stream plain_stream = std::move(dlg_.stream());
+        boost::asio::ssl::stream<Stream> ssl_stream(std::move(plain_stream), context);
+        co_await ssl_stream.async_handshake(boost::asio::ssl::stream_base::client, boost::asio::use_awaitable);
+        co_return pop3_client<boost::asio::ssl::stream<Stream>>(std::move(ssl_stream));
+    }
+
+private:
+    boost::asio::awaitable<std::string> read_greeting_impl()
+    {
+        std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+        auto [status, msg] = parse_status(line);
+        if (!is_ok(status))
+            throw pop3_error("Connection to server failure.", msg);
+        co_return msg;
+    }
+
+    boost::asio::awaitable<void> auth_login_impl(const std::string& username, const std::string& password)
+    {
+        co_await dlg_.async_send("USER " + username, boost::asio::use_awaitable);
+        std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+        auto [status, msg] = parse_status(line);
+        if (!is_ok(status))
+            throw pop3_error("Username rejection.", msg);
+
+        co_await dlg_.async_send("PASS " + password, boost::asio::use_awaitable);
+        line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+        std::tie(status, msg) = parse_status(line);
+        if (!is_ok(status))
+            throw pop3_error("Password rejection.", msg);
+    }
+
+    boost::asio::awaitable<message_list_t> list_impl(unsigned message_no)
+    {
+        message_list_t msg_list;
+        if (message_no > 0) {
+            co_await dlg_.async_send("LIST " + std::to_string(message_no), boost::asio::use_awaitable);
+            std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+            auto [status, msg] = parse_status(line);
+            if (!is_ok(status)) throw pop3_error("Listing message failure.", msg);
+            std::istringstream iss(msg);
+            unsigned num; unsigned long size;
+            if (iss >> num >> size) msg_list[num] = size;
+        } else {
+            co_await dlg_.async_send("LIST", boost::asio::use_awaitable);
+            std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+            auto [status, msg] = parse_status(line);
+            if (!is_ok(status)) throw pop3_error("Listing all messages failure.", msg);
+            while (true) {
+                line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+                if (line == END_OF_DATA) break;
+                std::istringstream iss(line);
+                unsigned num; unsigned long size;
+                if (iss >> num >> size) msg_list[num] = size;
+            }
+        }
+        co_return msg_list;
+    }
+
+    boost::asio::awaitable<uidl_list_t> uidl_impl(unsigned message_no)
+    {
+        uidl_list_t uidl_list;
+        if (message_no > 0) {
+            co_await dlg_.async_send("UIDL " + std::to_string(message_no), boost::asio::use_awaitable);
+            std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+            auto [status, msg] = parse_status(line);
+            if (!is_ok(status)) throw pop3_error("Listing message failure.", msg);
+            std::istringstream iss(msg);
+            unsigned num; std::string uid;
+            if (iss >> num >> uid) uidl_list[num] = uid;
+        } else {
+            co_await dlg_.async_send("UIDL", boost::asio::use_awaitable);
+            std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+            auto [status, msg] = parse_status(line);
+            if (!is_ok(status)) throw pop3_error("Listing all messages failure.", msg);
+            while (true) {
+                line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+                if (line == END_OF_DATA) break;
+                std::istringstream iss(line);
+                unsigned num; std::string uid;
+                if (iss >> num >> uid) uidl_list[num] = uid;
+            }
+        }
+        co_return uidl_list;
+    }
+
+    boost::asio::awaitable<mailbox_stat_t> statistics_impl()
+    {
+        co_await dlg_.async_send("STAT", boost::asio::use_awaitable);
+        std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+        auto [status, msg] = parse_status(line);
+        if (!is_ok(status)) throw pop3_error("Reading statistics failure.", msg);
+        mailbox_stat_t stat;
+        std::istringstream iss(msg);
+        if (!(iss >> stat.messages_no >> stat.mailbox_size))
+            throw pop3_error("Parser failure.", msg);
+        co_return stat;
+    }
+
+    boost::asio::awaitable<message> fetch_impl(unsigned long message_no, bool header_only)
+    {
+        message msg;
+        if (header_only)
+            co_await dlg_.async_send("TOP " + std::to_string(message_no) + " 0", boost::asio::use_awaitable);
+        else
+            co_await dlg_.async_send("RETR " + std::to_string(message_no), boost::asio::use_awaitable);
+
+        std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+        auto [status, resp_msg] = parse_status(line);
+        if (!is_ok(status)) throw pop3_error("Fetching message failure.", resp_msg);
+
+        std::string msg_str;
+        while (true) {
+            line = co_await dlg_.async_receive(true, boost::asio::use_awaitable);
+            if (line == END_OF_DATA || line == END_OF_DATA + "\r") break;
+            if (line.size() > 1 && line[0] == '.') line = line.substr(1);
+            msg_str += line + "\r\n";
+        }
+        msg.parse(msg_str);
+        co_return msg;
+    }
+
+    boost::asio::awaitable<void> remove_impl(unsigned long message_no)
+    {
+        co_await dlg_.async_send("DELE " + std::to_string(message_no), boost::asio::use_awaitable);
+        std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+        auto [status, msg] = parse_status(line);
+        if (!is_ok(status)) throw pop3_error("Removing message failure.", msg);
+    }
+
+    boost::asio::awaitable<void> quit_impl()
+    {
+        co_await dlg_.async_send("QUIT", boost::asio::use_awaitable);
+        std::string line = co_await dlg_.async_receive(false, boost::asio::use_awaitable);
+        auto [status, msg] = parse_status(line);
+        if (!is_ok(status)) throw pop3_error("Quit failure.", msg);
+    }
+
+    dialog_type dlg_;
+};
 
 } // namespace mailio
 

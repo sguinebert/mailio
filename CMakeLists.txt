@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.16.3)
 
 project(mailio VERSION 0.26.0)
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -61,7 +61,7 @@ if(WIN32)
     set(Boost_USE_STATIC_LIBS ON)
 endif(WIN32)
 
-find_package(Boost REQUIRED COMPONENTS date_time regex)
+find_package(Boost REQUIRED COMPONENTS regex)
 find_package(OpenSSL)
 set(CMAKE_THREAD_PREFER_PTHREAD)
 # "Use of both the imported target as well as this switch is highly recommended for new code."
@@ -69,21 +69,8 @@ set(THREADS_PREFER_PTHREAD_FLAG)
 find_package(Threads)
 
 set(project_sources
-    ${PROJECT_SOURCE_DIR}/src/base64.cpp
-    ${PROJECT_SOURCE_DIR}/src/binary.cpp
-    ${PROJECT_SOURCE_DIR}/src/bit7.cpp
-    ${PROJECT_SOURCE_DIR}/src/bit8.cpp
-    ${PROJECT_SOURCE_DIR}/src/codec.cpp
-    ${PROJECT_SOURCE_DIR}/src/dialog.cpp
-    ${PROJECT_SOURCE_DIR}/src/imap.cpp
-    ${PROJECT_SOURCE_DIR}/src/mailboxes.cpp
     ${PROJECT_SOURCE_DIR}/src/message.cpp
     ${PROJECT_SOURCE_DIR}/src/mime.cpp
-    ${PROJECT_SOURCE_DIR}/src/percent.cpp
-    ${PROJECT_SOURCE_DIR}/src/pop3.cpp
-    ${PROJECT_SOURCE_DIR}/src/quoted_printable.cpp
-    ${PROJECT_SOURCE_DIR}/src/q_codec.cpp
-    ${PROJECT_SOURCE_DIR}/src/smtp.cpp
 )
 
 set(project_headers
