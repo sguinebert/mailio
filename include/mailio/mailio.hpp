@@ -16,8 +16,22 @@
 #include <mailio/mime/mime.hpp>
 
 #include <mailio/net/dialog.hpp>
+#include <mailio/net/tls_mode.hpp>
 #include <mailio/net/upgradable_stream.hpp>
 
+#include <mailio/imap/types.hpp>
+#include <mailio/imap/error.hpp>
 #include <mailio/imap/client.hpp>
+#include <mailio/pop3/types.hpp>
+#include <mailio/pop3/error.hpp>
 #include <mailio/pop3/client.hpp>
+#include <mailio/smtp/types.hpp>
+#include <mailio/smtp/error.hpp>
 #include <mailio/smtp/client.hpp>
+
+// Utilities
+#include <mailio/detail/timeout_config.hpp>
+
+// Connection pooling
+#include <mailio/pool/pool.hpp>
+#include <mailio/pool/rate_limiter.hpp>

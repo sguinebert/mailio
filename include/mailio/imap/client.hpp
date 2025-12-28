@@ -1,9 +1,9 @@
 /*
 
-imap.hpp
---------
+imap/client.hpp
+---------------
 
-Copyright (C) 2016, Tomislav Karastojkovic (http://www.alepho.com).
+Copyright (C) 2025, Sylvain Guinebert (github.com/sguinebert).
 
 Distributed under the FreeBSD license, see the accompanying file LICENSE or
 copy at http://www.freebsd.org/copyright/freebsd-license.html.
@@ -13,757 +13,1351 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 
 #pragma once
 
-#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <format>
+#include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
-#include <list>
-#include <map>
 #include <utility>
-#include <optional>
-#include <variant>
-#include <sstream>
-#include <cctype>
-#include <stdexcept>
-#include <locale>
-#include <memory>
-#include <chrono>
-#include <format>
-#include <boost/asio.hpp>
-#include <boost/asio/awaitable.hpp>
-#include <boost/asio/use_awaitable.hpp>
-#include <boost/asio/ssl.hpp>
-#include <boost/regex.hpp>
-#include <boost/algorithm/string.hpp>
-#include <boost/range/adaptor/transformed.hpp>
-#include <mailio/net/dialog.hpp>
+
+#include <mailio/detail/asio_decl.hpp>
+#include <mailio/detail/append.hpp>
+#include <mailio/detail/auth_policy.hpp>
+#include <mailio/detail/async_mutex.hpp>
+#include <mailio/detail/log.hpp>
+#include <mailio/detail/redact.hpp>
+#include <mailio/detail/sasl.hpp>
+#include <mailio/detail/sanitize.hpp>
+#include <mailio/imap/error.hpp>
+#include <mailio/imap/types.hpp>
 #include <mailio/mime/message.hpp>
-#include <mailio/codec/codec.hpp>
-#include <mailio/export.hpp>
+#include <mailio/net/dialog.hpp>
+#include <mailio/net/tls_mode.hpp>
+#include <mailio/net/upgradable_stream.hpp>
 
-
-namespace mailio
+namespace mailio::imap
 {
 
+using mailio::asio::any_io_executor;
+using mailio::asio::awaitable;
+using mailio::asio::io_context;
+using mailio::asio::use_awaitable;
+using mailio::asio::async_connect;
+using mailio::asio::tcp;
+using mailio::asio::buffer;
+namespace ssl = mailio::asio::ssl;
 
-class MAILIO_EXPORT imap_error : public std::runtime_error
-{
-public:
-    explicit imap_error(const std::string& msg) : std::runtime_error(msg)
-    {
-    }
-
-    explicit imap_error(const char* msg) : std::runtime_error(msg)
-    {
-    }
-};
-
-
-class MAILIO_EXPORT imap_base
+class client
 {
 public:
-    inline static const std::string UNTAGGED_RESPONSE{"*"};
-    inline static const std::string CONTINUE_RESPONSE{"+"};
-    inline static const std::string RANGE_SEPARATOR{":"};
-    inline static const std::string RANGE_ALL{"*"};
-    inline static const std::string LIST_SEPARATOR{","};
-    inline static const std::string TOKEN_SEPARATOR_STR{" "};
-    inline static const std::string QUOTED_STRING_SEPARATOR{"\""};
+    using executor_type = any_io_executor;
+    using dialog_type = mailio::net::dialog<mailio::net::upgradable_stream>;
 
-    struct mailbox_stat_t
-    {
-        unsigned long messages_no;
-        unsigned long recent_messages_no;
-        unsigned long uid_next;
-        unsigned long uid_validity;
-        unsigned long unseen_messages_no;
-
-        mailbox_stat_t() : messages_no(0), recent_messages_no(0), uid_next(0), uid_validity(0), unseen_messages_no(0)
-        {
-        }
-    };
-
-    struct mailbox_folder_t
-    {
-        std::vector<std::string> attributes;
-        std::string hierarchy_delimiter;
-        std::string name;
-    };
-
-    struct fetch_msg_t
-    {
-        unsigned long uid;
-        unsigned long size;
-        std::vector<std::string> flags;
-    };
-
-    enum class response_status_t {OK, NO, BAD, PREAUTH, BYE, UNKNOWN};
-
-    struct response_line_t
-    {
-        std::vector<std::string> fragments;
-        std::vector<std::string> literals;
-    };
-
-    struct response_t
-    {
-        std::string tag;
-        response_status_t status{response_status_t::UNKNOWN};
-        std::string text;
-        std::vector<std::string> literals;
-        std::vector<response_line_t> lines;
-    };
-
-    enum class auth_method_t {LOGIN};
-
-    typedef std::pair<unsigned long, std::optional<unsigned long>> messages_range_t;
-
-    static std::string messages_range_to_string(messages_range_t id_pair)
-    {
-        return std::to_string(id_pair.first) + (id_pair.second.has_value() ? RANGE_SEPARATOR + std::to_string(id_pair.second.value()) : RANGE_SEPARATOR + RANGE_ALL);
-    }
-
-    static std::string messages_range_list_to_string(std::list<messages_range_t> ranges)
-    {
-        return boost::algorithm::join(ranges | boost::adaptors::transformed(static_cast<std::string(*)(messages_range_t)>(messages_range_to_string)), LIST_SEPARATOR);
-    }
-
-    static std::string to_astring(const std::string& text)
-    {
-        return codec::surround_string(codec::escape_string(text, "\"\\"));
-    }
-
-    /**
-    Converting a date to IMAP date string format (dd-Mon-yyyy).
-    
-    @param date Date to convert.
-    @return     Date as IMAP formatted string.
-    **/
-    static std::string imap_date_to_string(const std::chrono::year_month_day& date)
-    {
-        std::chrono::sys_days sd{date};
-        return std::format("{:%d-%b-%Y}", sd);
-    }
-
-    struct search_condition_t
-    {
-        enum key_type {ALL, SID_LIST, UID_LIST, SUBJECT, BODY, FROM, TO, BEFORE_DATE, ON_DATE, SINCE_DATE, NEW, RECENT, SEEN, UNSEEN} key;
-
-        typedef std::variant
-        <
-            std::monostate,
-            std::string,
-            std::list<messages_range_t>,
-            std::chrono::year_month_day
-        >
-        value_type;
-
-        value_type value;
-        std::string imap_string;
-
-        search_condition_t(key_type condition_key, value_type condition_value = value_type()) : key(condition_key), value(condition_value)
-        {
-            try
-            {
-                switch (key)
-                {
-                    case ALL:
-                        imap_string = "ALL";
-                        break;
-
-                    case SID_LIST:
-                    {
-                        imap_string = messages_range_list_to_string(std::get<std::list<messages_range_t>>(value));
-                        break;
-                    }
-
-                    case UID_LIST:
-                    {
-                        imap_string = "UID " + messages_range_list_to_string(std::get<std::list<messages_range_t>>(value));
-                        break;
-                    }
-
-                    case SUBJECT:
-                        imap_string = "SUBJECT " + QUOTED_STRING_SEPARATOR + std::get<std::string>(value) + QUOTED_STRING_SEPARATOR;
-                        break;
-
-                    case BODY:
-                        imap_string = "BODY " + QUOTED_STRING_SEPARATOR + std::get<std::string>(value) + QUOTED_STRING_SEPARATOR;
-                        break;
-
-                    case FROM:
-                        imap_string = "FROM " + QUOTED_STRING_SEPARATOR + std::get<std::string>(value) + QUOTED_STRING_SEPARATOR;
-                        break;
-
-                    case TO:
-                        imap_string = "TO " + QUOTED_STRING_SEPARATOR + std::get<std::string>(value) + QUOTED_STRING_SEPARATOR;
-                        break;
-
-                    case BEFORE_DATE:
-                        imap_string = "BEFORE " + imap_date_to_string(std::get<std::chrono::year_month_day>(value));
-                        break;
-
-                    case ON_DATE:
-                        imap_string = "ON " + imap_date_to_string(std::get<std::chrono::year_month_day>(value));
-                        break;
-
-                    case SINCE_DATE:
-                        imap_string = "SINCE " + imap_date_to_string(std::get<std::chrono::year_month_day>(value));
-                        break;
-
-                    case NEW:
-                        imap_string = "NEW";
-                        break;
-
-                    case RECENT:
-                        imap_string = "RECENT";
-                        break;
-
-                    case SEEN:
-                        imap_string = "SEEN";
-                        break;
-
-                    case UNSEEN:
-                        imap_string = "UNSEEN";
-                        break;
-                }
-            }
-            catch (...)
-            {
-                throw imap_error("Invalid search condition.");
-            }
-        }
-    };
-};
-
-
-    template<typename Stream>
-    class imap_client : public imap_base
+    class idle_session
     {
     public:
-        struct response_token_t
-        {
-            enum class token_type_t {ATOM, LITERAL, LIST} token_type;
-            std::string atom;
-            std::string literal;
-            std::string literal_size;
-            std::list<std::shared_ptr<response_token_t>> parenthesized_list;
-        };
+        idle_session() = default;
+        idle_session(const idle_session&) = delete;
+        idle_session& operator=(const idle_session&) = delete;
 
-        imap_client(Stream stream) : dlg_(std::move(stream))
+        idle_session(idle_session&& other) noexcept
+            : owner_(other.owner_),
+              lock_(std::move(other.lock_)),
+              tag_(std::move(other.tag_)),
+              active_(other.active_)
         {
-            reset_response_parser();
+            other.owner_ = nullptr;
+            other.active_ = false;
+            other.tag_.clear();
         }
 
-        imap_client(dialog<Stream> dlg) : dlg_(std::move(dlg))
+        idle_session& operator=(idle_session&& other) noexcept
         {
-            reset_response_parser();
+            if (this != &other)
+            {
+                owner_ = other.owner_;
+                lock_ = std::move(other.lock_);
+                tag_ = std::move(other.tag_);
+                active_ = other.active_;
+                other.owner_ = nullptr;
+                other.active_ = false;
+                other.tag_.clear();
+            }
+            return *this;
         }
 
-        boost::asio::awaitable<void> connect(const std::string& host, const std::string& service)
+        ~idle_session() = default;
+
+        awaitable<std::string> idle_read()
         {
-            boost::asio::ip::tcp::resolver resolver(dlg_.stream().get_executor());
-            auto endpoints = co_await resolver.async_resolve(host, service, boost::asio::use_awaitable);
-            co_await boost::asio::async_connect(dlg_.stream().lowest_layer(), endpoints, boost::asio::use_awaitable);
+            if (!active_ || owner_ == nullptr)
+                throw error("IDLE is not active.", "");
+            co_return co_await owner_->dialog().read_line(use_awaitable);
         }
 
-        boost::asio::awaitable<void> connect(const std::string& host, unsigned short port)
+        awaitable<response> idle_stop()
         {
-            co_await connect(host, std::to_string(port));
-        }
+            if (!active_ || owner_ == nullptr)
+                throw error("IDLE is not active.", "");
 
-        boost::asio::awaitable<response_t> read_greeting()
-        {
-            response_line_t line = co_await read_response_line();
-            if (line.fragments.empty())
-                throw imap_error("Parser failure.");
+            co_await owner_->dialog().write_line("DONE", use_awaitable);
 
-            auto [status, text] = parse_untagged_status(line.fragments.front());
-            if (status != response_status_t::OK && status != response_status_t::PREAUTH && status != response_status_t::BYE)
-                throw imap_error("Invalid greeting.");
+            response resp;
+            resp.tag = tag_;
 
-            response_t response;
-            response.status = status;
-            response.text = std::move(text);
-            response.lines.push_back(std::move(line));
-            co_return response;
-        }
-
-        boost::asio::awaitable<response_t> command(std::string command)
-        {
-            response_t response;
-            response.tag = co_await send_command(command);
             while (true)
             {
-                response_line_t line = co_await read_response_line();
-                if (line.fragments.empty())
-                    throw imap_error("Parser failure.");
-                std::string head = line.fragments.front();
-                bool tagged = is_tagged_response(head, response.tag);
-                if (!line.literals.empty())
-                {
-                    response.literals.reserve(response.literals.size() + line.literals.size());
-                    for (auto& literal : line.literals)
-                        response.literals.push_back(std::move(literal));
-                }
-                if (tagged)
-                {
-                    auto [status, text] = parse_tagged_status(head, response.tag);
-                    response.status = status;
-                    response.text = std::move(text);
-                    if (!is_tagged_status(status))
-                        throw imap_error("Invalid response status.");
-                    response.lines.push_back(std::move(line));
-                    break;
-                }
-                response.lines.push_back(std::move(line));
-            }
-            co_return response;
-        }
+                std::string line = co_await owner_->dialog().read_line(use_awaitable);
+                client::handle_line(resp, line, tag_);
 
-        boost::asio::awaitable<response_t> capability()
-        {
-            response_t response = co_await command("CAPABILITY");
-            ensure_ok(response, "Capability");
-            co_return response;
-        }
-
-        boost::asio::awaitable<response_t> login(std::string username, std::string password)
-        {
-            response_t response = co_await command("LOGIN " + to_astring(username) + " " + to_astring(password));
-            ensure_ok(response, "Login");
-            co_return response;
-        }
-
-        boost::asio::awaitable<response_t> logout()
-        {
-            response_t response = co_await command("LOGOUT");
-            ensure_ok(response, "Logout");
-            co_return response;
-        }
-
-        template<typename SSLContext>
-        boost::asio::awaitable<imap_client<boost::asio::ssl::stream<Stream>>> start_tls(SSLContext& context)
-        {
-            response_t response = co_await command("STARTTLS");
-            ensure_ok(response, "STARTTLS");
-
-            Stream& socket = dlg_.stream();
-            boost::asio::ssl::stream<Stream> ssl_stream(std::move(socket), context);
-            co_await ssl_stream.async_handshake(boost::asio::ssl::stream_base::client, boost::asio::use_awaitable);
-
-            co_return imap_client<boost::asio::ssl::stream<Stream>>(std::move(ssl_stream));
-        }
-
-        template<typename CompletionToken>
-        auto async_read_greeting(CompletionToken&& token)
-        {
-            return boost::asio::co_spawn(dlg_.stream().get_executor(),
-                [this]() -> boost::asio::awaitable<void>
-                {
-                    co_await read_greeting();
-                }, std::forward<CompletionToken>(token));
-        }
-
-        template<typename CompletionToken>
-        auto async_authenticate(const std::string& username, const std::string& password, CompletionToken&& token)
-        {
-            return boost::asio::co_spawn(dlg_.stream().get_executor(),
-                [this, username, password]() -> boost::asio::awaitable<void>
-                {
-                    co_await login(username, password);
-                }, std::forward<CompletionToken>(token));
-        }
-
-        template<typename CompletionToken>
-        auto async_logout(CompletionToken&& token)
-        {
-            return boost::asio::co_spawn(dlg_.stream().get_executor(),
-                [this]() -> boost::asio::awaitable<void>
-                {
-                    co_await logout();
-                }, std::forward<CompletionToken>(token));
-        }
-
-        template<typename SSLContext, typename CompletionToken>
-        auto starttls(SSLContext& context, CompletionToken&& token)
-        {
-            return boost::asio::co_spawn(dlg_.stream().get_executor(),
-                [this, &context]() -> boost::asio::awaitable<imap_client<boost::asio::ssl::stream<Stream>>>
-                {
-                    co_return co_await start_tls(context);
-                }, std::forward<CompletionToken>(token));
-        }
-
-    protected:
-        dialog<Stream> dlg_;
-        
-        enum class string_literal_state_t {NONE, SIZE, WAITING, READING, DONE};
-        enum class atom_state_t {NONE, PLAIN, QUOTED};
-
-        string_literal_state_t literal_state_;
-        atom_state_t atom_state_;
-        bool optional_part_state_;
-        unsigned int parenthesis_list_counter_;
-        std::list<std::shared_ptr<response_token_t>> mandatory_part_;
-        std::list<std::shared_ptr<response_token_t>> optional_part_;
-        unsigned int tag_{0};
-
-        static const char OPTIONAL_BEGIN = '[';
-        static const char OPTIONAL_END = ']';
-        static const char LIST_BEGIN = '(';
-        static const char LIST_END = ')';
-        static const char STRING_LITERAL_BEGIN = '{';
-        static const char STRING_LITERAL_END = '}';
-        static const char TOKEN_SEPARATOR_CHAR = ' ';
-        static const char QUOTED_ATOM = '"';
-
-        static bool starts_with(std::string_view text, std::string_view prefix)
-        {
-            return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
-        }
-
-        static std::string_view ltrim(std::string_view text)
-        {
-            while (!text.empty() && text.front() == ' ')
-                text.remove_prefix(1);
-            return text;
-        }
-
-        static std::pair<std::string_view, std::string_view> split_token(std::string_view text)
-        {
-            text = ltrim(text);
-            auto pos = text.find(' ');
-            if (pos == std::string_view::npos)
-                return {text, std::string_view{}};
-            return {text.substr(0, pos), ltrim(text.substr(pos + 1))};
-        }
-
-        static bool iequals(std::string_view lhs, std::string_view rhs)
-        {
-            if (lhs.size() != rhs.size())
-                return false;
-            for (std::size_t i = 0; i < lhs.size(); ++i)
-            {
-                if (std::tolower(static_cast<unsigned char>(lhs[i])) != std::tolower(static_cast<unsigned char>(rhs[i])))
-                    return false;
-            }
-            return true;
-        }
-
-        static response_status_t parse_status_atom(std::string_view atom)
-        {
-            if (iequals(atom, "OK"))
-                return response_status_t::OK;
-            if (iequals(atom, "NO"))
-                return response_status_t::NO;
-            if (iequals(atom, "BAD"))
-                return response_status_t::BAD;
-            if (iequals(atom, "PREAUTH"))
-                return response_status_t::PREAUTH;
-            if (iequals(atom, "BYE"))
-                return response_status_t::BYE;
-            return response_status_t::UNKNOWN;
-        }
-
-        static bool is_tagged_status(response_status_t status)
-        {
-            return status == response_status_t::OK || status == response_status_t::NO || status == response_status_t::BAD;
-        }
-
-        static std::pair<response_status_t, std::string> parse_untagged_status(std::string_view line)
-        {
-            if (!starts_with(line, UNTAGGED_RESPONSE))
-                throw imap_error("Invalid greeting.");
-
-            std::string_view rest = line.substr(UNTAGGED_RESPONSE.size());
-            auto [status_atom, text] = split_token(rest);
-            response_status_t status = parse_status_atom(status_atom);
-            if (status == response_status_t::UNKNOWN)
-                throw imap_error("Invalid response status.");
-            return {status, std::string(text)};
-        }
-
-        static std::pair<response_status_t, std::string> parse_tagged_status(std::string_view line, std::string_view tag)
-        {
-            if (!starts_with(line, tag))
-                throw imap_error("Invalid response tag.");
-
-            std::string_view rest = line.substr(tag.size());
-            auto [status_atom, text] = split_token(rest);
-            response_status_t status = parse_status_atom(status_atom);
-            if (status == response_status_t::UNKNOWN)
-                throw imap_error("Invalid response status.");
-            return {status, std::string(text)};
-        }
-
-        static bool is_tagged_response(std::string_view line, std::string_view tag)
-        {
-            if (!starts_with(line, tag))
-                return false;
-            if (line.size() == tag.size())
-                return true;
-            return line[tag.size()] == ' ';
-        }
-
-        static void ensure_ok(const response_t& response, const std::string& context)
-        {
-            if (response.status == response_status_t::OK)
-                return;
-            std::string msg = context + " failure.";
-            if (!response.text.empty())
-                msg += " " + response.text;
-            throw imap_error(msg);
-        }
-
-        void reset_response_parser()
-        {
-            optional_part_.clear();
-            mandatory_part_.clear();
-            optional_part_state_ = false;
-            atom_state_ = atom_state_t::NONE;
-            parenthesis_list_counter_ = 0;
-            literal_state_ = string_literal_state_t::NONE;
-        }
-
-        std::list<std::shared_ptr<response_token_t>>* find_last_token_list(std::list<std::shared_ptr<response_token_t>>& token_list)
-        {
-            auto* list_ptr = &token_list;
-            unsigned int depth = 1;
-            while (!list_ptr->empty() && list_ptr->back()->token_type == response_token_t::token_type_t::LIST && depth <= parenthesis_list_counter_)
-            {
-                list_ptr = &(list_ptr->back()->parenthesized_list);
-                depth++;
-            }
-            return list_ptr;
-        }
-
-        void parse_response(const std::string& response)
-        {
-            std::list<std::shared_ptr<response_token_t>>* token_list;
-
-            std::shared_ptr<response_token_t> cur_token;
-            for (auto ch : response)
-            {
-                switch (ch)
-                {
-                    case OPTIONAL_BEGIN:
-                    {
-                        if (atom_state_ == atom_state_t::QUOTED)
-                            cur_token->atom +=ch;
-                        else
-                        {
-                            if (optional_part_state_)
-                                throw imap_error("Parser failure.");
-
-                            optional_part_state_ = true;
-                        }
-                    }
-                    break;
-
-                    case OPTIONAL_END:
-                    {
-                        if (atom_state_ == atom_state_t::QUOTED)
-                            cur_token->atom +=ch;
-                        else
-                        {
-                            if (!optional_part_state_)
-                                throw imap_error("Parser failure.");
-
-                            optional_part_state_ = false;
-                            atom_state_ = atom_state_t::NONE;
-                        }
-                    }
-                    break;
-
-                    case LIST_BEGIN:
-                    {
-                        if (atom_state_ == atom_state_t::QUOTED)
-                            cur_token->atom +=ch;
-                        else
-                        {
-                            cur_token = std::make_shared<response_token_t>();
-                            cur_token->token_type = response_token_t::token_type_t::LIST;
-                            token_list = optional_part_state_ ? find_last_token_list(optional_part_) : find_last_token_list(mandatory_part_);
-                            token_list->push_back(cur_token);
-                            parenthesis_list_counter_++;
-                            atom_state_ = atom_state_t::NONE;
-                        }
-                    }
-                    break;
-
-                    case LIST_END:
-                    {
-                        if (atom_state_ == atom_state_t::QUOTED)
-                            cur_token->atom +=ch;
-                        else
-                        {
-                            if (parenthesis_list_counter_ == 0)
-                                throw imap_error("Parser failure.");
-
-                            parenthesis_list_counter_--;
-                            atom_state_ = atom_state_t::NONE;
-                        }
-                    }
-                    break;
-
-                    case STRING_LITERAL_BEGIN:
-                    {
-                        if (atom_state_ == atom_state_t::QUOTED)
-                            cur_token->atom +=ch;
-                        else
-                        {
-                            if (literal_state_ == string_literal_state_t::SIZE)
-                                throw imap_error("Parser failure.");
-
-                            cur_token = std::make_shared<response_token_t>();
-                            cur_token->token_type = response_token_t::token_type_t::LITERAL;
-                            token_list = optional_part_state_ ? find_last_token_list(optional_part_) : find_last_token_list(mandatory_part_);
-                            token_list->push_back(cur_token);
-                            literal_state_ = string_literal_state_t::SIZE;
-                            atom_state_ = atom_state_t::NONE;
-                        }
-                    }
-                    break;
-
-                    case STRING_LITERAL_END:
-                    {
-                        if (atom_state_ == atom_state_t::QUOTED)
-                            cur_token->atom +=ch;
-                        else
-                        {
-                            if (literal_state_ == string_literal_state_t::NONE)
-                                throw imap_error("Parser failure.");
-
-                            literal_state_ = string_literal_state_t::WAITING;
-                        }
-                    }
-                    break;
-
-                    case TOKEN_SEPARATOR_CHAR:
-                    {
-                        if (atom_state_ == atom_state_t::QUOTED)
-                            cur_token->atom +=ch;
-                        else
-                        {
-                            if (cur_token != nullptr)
-                            {
-                                boost::trim(cur_token->atom);
-                                atom_state_ = atom_state_t::NONE;
-                            }
-                        }
-                    }
-                    break;
-
-                    case QUOTED_ATOM:
-                    {
-                        if (atom_state_ == atom_state_t::NONE)
-                        {
-                            cur_token = std::make_shared<response_token_t>();
-                            cur_token->token_type = response_token_t::token_type_t::ATOM;
-                            token_list = optional_part_state_ ? find_last_token_list(optional_part_) : find_last_token_list(mandatory_part_);
-                            token_list->push_back(cur_token);
-                            atom_state_ = atom_state_t::QUOTED;
-                        }
-                        else if (atom_state_ == atom_state_t::QUOTED)
-                        {
-                            if (token_list->back()->atom.back() != codec::BACKSLASH_CHAR)
-                                atom_state_ = atom_state_t::NONE;
-                            else
-                                token_list->back()->atom.back() = ch;
-                        }
-                    }
-                    break;
-
-                    default:
-                    {
-                        if (ch == codec::BACKSLASH_CHAR && atom_state_ == atom_state_t::QUOTED && token_list->back()->atom.back() == codec::BACKSLASH_CHAR)
-                            break;
-
-                        if (literal_state_ == string_literal_state_t::SIZE)
-                        {
-                            if (!isdigit(ch))
-                                throw imap_error("Parser failure.");
-
-                            cur_token->literal_size += ch;
-                        }
-                        else if (literal_state_ == string_literal_state_t::WAITING)
-                        {
-                            throw imap_error("Parser failure.");
-                        }
-                        else
-                        {
-                            if (atom_state_ == atom_state_t::NONE)
-                            {
-                                cur_token = std::make_shared<response_token_t>();
-                                cur_token->token_type = response_token_t::token_type_t::ATOM;
-                                token_list = optional_part_state_ ? find_last_token_list(optional_part_) : find_last_token_list(mandatory_part_);
-                                token_list->push_back(cur_token);
-                                atom_state_ = atom_state_t::PLAIN;
-                            }
-                            cur_token->atom += ch;
-                        }
-                    }
-                }
-            }
-        }
-
-        std::shared_ptr<response_token_t> pending_literal_token()
-        {
-            if (literal_state_ != string_literal_state_t::WAITING)
-                throw imap_error("Parser failure.");
-
-            auto* token_list = optional_part_state_ ? find_last_token_list(optional_part_) : find_last_token_list(mandatory_part_);
-            if (token_list->empty() || token_list->back()->token_type != response_token_t::token_type_t::LITERAL)
-                throw imap_error("Parser failure.");
-            return token_list->back();
-        }
-
-        boost::asio::awaitable<response_line_t> read_response_line()
-        {
-            response_line_t response;
-            reset_response_parser();
-            std::string line = co_await dlg_.read_line(boost::asio::use_awaitable);
-            response.fragments.push_back(line);
-            parse_response(line);
-            while (literal_state_ == string_literal_state_t::WAITING)
-            {
-                auto token = pending_literal_token();
                 std::size_t literal_size = 0;
-                try
+                if (client::extract_literal_size(line, literal_size))
                 {
-                    literal_size = std::stoul(token->literal_size);
+                    resp.literals.push_back(
+                        co_await owner_->dialog().read_exactly(literal_size, use_awaitable));
                 }
-                catch (...)
-                {
-                    throw imap_error("Parser failure.");
-                }
-                std::string literal = co_await dlg_.read_exactly(literal_size, boost::asio::use_awaitable);
-                response.literals.push_back(literal);
-                token->literal = std::move(literal);
-                literal_state_ = string_literal_state_t::NONE;
-                std::string continuation = co_await dlg_.read_line(boost::asio::use_awaitable);
-                response.fragments.push_back(continuation);
-                parse_response(continuation);
+
+                if (client::is_tagged_line(line, tag_))
+                    break;
             }
-            co_return response;
+
+            active_ = false;
+            owner_ = nullptr;
+            lock_ = mailio::detail::async_mutex::scoped_lock();
+            co_return resp;
         }
 
-        boost::asio::awaitable<std::string> read_response()
+    private:
+        friend class client;
+
+        idle_session(client* owner,
+            mailio::detail::async_mutex::scoped_lock lock,
+            std::string tag,
+            bool active)
+            : owner_(owner),
+              lock_(std::move(lock)),
+              tag_(std::move(tag)),
+              active_(active)
         {
-            response_line_t line = co_await read_response_line();
-            if (line.fragments.empty())
-                co_return std::string();
-            co_return line.fragments.front();
         }
 
-        boost::asio::awaitable<std::string> send_command(const std::string& command)
+        client* owner_{nullptr};
+        mailio::detail::async_mutex::scoped_lock lock_;
+        std::string tag_;
+        bool active_{false};
+    };
+
+    explicit client(executor_type executor, options opts = {})
+        : executor_(executor),
+          options_(std::move(opts)),
+          mutex_(executor_)
+    {
+    }
+
+    explicit client(io_context& context, options opts = {})
+        : client(context.get_executor(), std::move(opts))
+    {
+    }
+
+    executor_type get_executor() const { return executor_; }
+
+    awaitable<void> connect(const std::string& host, unsigned short port)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_await connect_impl(host, std::to_string(port), mailio::net::tls_mode::none, nullptr, {});
+    }
+
+    awaitable<void> connect(const std::string& host, const std::string& service)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_await connect_impl(host, service, mailio::net::tls_mode::none, nullptr, {});
+    }
+
+    awaitable<void> connect(const std::string& host, unsigned short port, mailio::net::tls_mode mode,
+        ssl::context* tls_ctx = nullptr, std::string sni = {})
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_await connect_impl(host, std::to_string(port), mode, tls_ctx, std::move(sni));
+    }
+
+    awaitable<void> connect(const std::string& host, const std::string& service, mailio::net::tls_mode mode,
+        ssl::context* tls_ctx = nullptr, std::string sni = {})
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_await connect_impl(host, service, mode, tls_ctx, std::move(sni));
+    }
+
+    awaitable<void> connect(std::string host, std::string service, mailio::net::tls_mode mode,
+        ssl::context* tls_ctx = nullptr, std::string sni = {})
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_await connect_impl(host, service, mode, tls_ctx, std::move(sni));
+    }
+
+    awaitable<response> read_greeting()
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_return co_await read_greeting_impl();
+    }
+
+    awaitable<response> command(std::string_view cmd)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_return co_await command_impl(cmd);
+    }
+
+    awaitable<response> capability()
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_return co_await capability_impl();
+    }
+
+    awaitable<response> login(std::string_view username, std::string_view password)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_return co_await login_impl(username, password);
+    }
+
+    awaitable<response> authenticate(credentials cred, auth_method method)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_return co_await authenticate_impl(std::move(cred), method);
+    }
+
+    awaitable<response> logout()
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_return co_await command_impl("LOGOUT");
+    }
+
+    awaitable<response> noop()
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_return co_await command_impl("NOOP");
+    }
+
+    awaitable<response> append(std::string_view mailbox, const mailio::message& msg,
+        std::string_view flags = {}, std::string_view date_time = {})
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        std::string payload;
+        msg.format(payload);
+        co_return co_await append_raw_impl(mailbox, payload, flags, date_time);
+    }
+
+    awaitable<response> append_raw(std::string_view mailbox, std::string_view data,
+        std::string_view flags = {}, std::string_view date_time = {})
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_return co_await append_raw_impl(mailbox, data, flags, date_time);
+    }
+
+    awaitable<std::pair<response, std::vector<mailbox_folder>>> list(std::string_view reference, std::string_view pattern)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        mailio::detail::ensure_no_crlf_or_nul(reference, "reference");
+        mailio::detail::ensure_no_crlf_or_nul(pattern, "pattern");
+
+        const std::string ref = mailio::imap::to_mailbox(reference);
+        const std::string pat = mailio::imap::to_mailbox(pattern);
+
+        std::string cmd;
+        mailio::detail::append_sv(cmd, "LIST");
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, ref);
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, pat);
+
+        response resp = co_await command_impl(cmd);
+        std::vector<mailbox_folder> folders;
+        folders.reserve(resp.untagged_lines.size());
+        for (const auto& line : resp.untagged_lines)
         {
-            std::string tag = std::to_string(++tag_);
-            std::string line = command.empty() ? tag : tag + " " + command;
-            co_await dlg_.write_line(line, boost::asio::use_awaitable);
-            co_return tag;
+            mailbox_folder folder;
+            if (parse_list_line(line, folder))
+                folders.push_back(std::move(folder));
+        }
+
+        co_return std::make_pair(std::move(resp), std::move(folders));
+    }
+
+    awaitable<std::pair<response, mailbox_stat>> select(std::string_view mailbox)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        mailio::detail::ensure_no_crlf_or_nul(mailbox, "mailbox");
+
+        const std::string box = mailio::imap::to_mailbox(mailbox);
+        std::string cmd;
+        mailio::detail::append_sv(cmd, "SELECT");
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, box);
+
+        response resp = co_await command_impl(cmd);
+        mailbox_stat stat;
+        for (const auto& line : resp.untagged_lines)
+            parse_mailbox_stat(line, stat);
+        co_return std::make_pair(std::move(resp), stat);
+    }
+
+    awaitable<std::pair<response, mailbox_stat>> examine(std::string_view mailbox)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        mailio::detail::ensure_no_crlf_or_nul(mailbox, "mailbox");
+
+        const std::string box = mailio::imap::to_mailbox(mailbox);
+        std::string cmd;
+        mailio::detail::append_sv(cmd, "EXAMINE");
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, box);
+
+        response resp = co_await command_impl(cmd);
+        mailbox_stat stat;
+        for (const auto& line : resp.untagged_lines)
+            parse_mailbox_stat(line, stat);
+        co_return std::make_pair(std::move(resp), stat);
+    }
+
+    awaitable<std::pair<response, std::vector<std::uint32_t>>> search(std::string_view criteria, bool uid = false)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        mailio::detail::ensure_no_crlf_or_nul(criteria, "criteria");
+
+        std::string cmd;
+        if (uid)
+            mailio::detail::append_sv(cmd, "UID SEARCH");
+        else
+            mailio::detail::append_sv(cmd, "SEARCH");
+        if (!criteria.empty())
+        {
+            mailio::detail::append_space(cmd);
+            mailio::detail::append_sv(cmd, criteria);
+        }
+
+        response resp = co_await command_impl(cmd);
+        std::vector<std::uint32_t> ids;
+        for (const auto& line : resp.untagged_lines)
+        {
+            auto parsed = parse_search_ids(line);
+            if (!parsed.empty())
+                ids.insert(ids.end(), parsed.begin(), parsed.end());
+        }
+
+        co_return std::make_pair(std::move(resp), std::move(ids));
+    }
+
+    awaitable<std::vector<std::uint32_t>> uid_search(std::string_view criteria)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        mailio::detail::ensure_no_crlf_or_nul(criteria, "criteria");
+
+        std::string cmd;
+        mailio::detail::append_sv(cmd, "UID SEARCH");
+        if (!criteria.empty())
+        {
+            mailio::detail::append_space(cmd);
+            mailio::detail::append_sv(cmd, criteria);
+        }
+
+        response resp = co_await command_impl(cmd);
+        std::vector<std::uint32_t> ids;
+        for (const auto& line : resp.untagged_lines)
+        {
+            auto parsed = parse_search_ids(line);
+            if (!parsed.empty())
+                ids.insert(ids.end(), parsed.begin(), parsed.end());
+        }
+
+        co_return ids;
+    }
+
+    awaitable<std::string> uid_fetch_rfc822(std::uint32_t uid)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        std::string cmd;
+        mailio::detail::append_sv(cmd, "UID FETCH");
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_uint(cmd, uid);
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, "(RFC822)");
+
+        response resp = co_await command_impl(cmd);
+        co_return select_fetch_literal(resp, "RFC822");
+    }
+
+    awaitable<std::string> uid_fetch_body(std::uint32_t uid, std::string_view section)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        mailio::detail::ensure_no_crlf_or_nul(section, "section");
+
+        std::string cmd;
+        mailio::detail::append_sv(cmd, "UID FETCH");
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_uint(cmd, uid);
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_char(cmd, '(');
+        mailio::detail::append_sv(cmd, section);
+        mailio::detail::append_char(cmd, ')');
+
+        response resp = co_await command_impl(cmd);
+        co_return select_fetch_literal(resp, "BODY[");
+    }
+
+    awaitable<response> fetch(std::string_view seq_set, std::string_view items, bool uid = false)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        mailio::detail::ensure_no_crlf_or_nul(seq_set, "seq_set");
+        mailio::detail::ensure_no_crlf_or_nul(items, "items");
+
+        std::string cmd;
+        if (uid)
+            mailio::detail::append_sv(cmd, "UID FETCH");
+        else
+            mailio::detail::append_sv(cmd, "FETCH");
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, seq_set);
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, items);
+
+        co_return co_await command_impl(cmd);
+    }
+
+    awaitable<response> store(std::string_view seq_set, std::string_view item_name, std::string_view value,
+        std::string_view mode, bool uid = false)
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        mailio::detail::ensure_no_crlf_or_nul(seq_set, "seq_set");
+        mailio::detail::ensure_no_crlf_or_nul(item_name, "item_name");
+        mailio::detail::ensure_no_crlf_or_nul(value, "value");
+        mailio::detail::ensure_no_crlf_or_nul(mode, "mode");
+
+        std::string cmd;
+        if (uid)
+            mailio::detail::append_sv(cmd, "UID STORE");
+        else
+            mailio::detail::append_sv(cmd, "STORE");
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, seq_set);
+        mailio::detail::append_space(cmd);
+        std::string item = build_store_item(item_name, mode);
+        mailio::detail::append_sv(cmd, item);
+        if (!value.empty())
+        {
+            mailio::detail::append_space(cmd);
+            mailio::detail::append_sv(cmd, value);
+        }
+
+        co_return co_await command_impl(cmd);
+    }
+
+    awaitable<response> close()
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_return co_await command_impl("CLOSE");
+    }
+
+    awaitable<void> start_tls(ssl::context& context, std::string sni = {})
+    {
+        [[maybe_unused]] auto guard = co_await mutex_.lock();
+        co_await start_tls_impl(context, std::move(sni));
+    }
+
+    awaitable<idle_session> idle_start()
+    {
+        auto lock = co_await mutex_.lock();
+
+        std::string tag = std::to_string(++tag_counter_);
+        std::string line = tag;
+        mailio::detail::append_space(line);
+        mailio::detail::append_sv(line, "IDLE");
+
+        co_await dialog().write_line(line, use_awaitable);
+
+        std::string reply_line = co_await dialog().read_line(use_awaitable);
+        if (!reply_line.empty() && reply_line[0] == '+')
+            co_return idle_session(this, std::move(lock), std::move(tag), true);
+
+        if (is_tagged_line(reply_line, tag))
+        {
+            response resp;
+            resp.tag = tag;
+            handle_line(resp, reply_line, tag);
+            throw error("IDLE rejection.", resp.text.empty() ? reply_line : resp.text);
+        }
+
+        throw error("IDLE failure.", reply_line);
+    }
+
+private:
+    struct capabilities_cache
+    {
+        bool sasl_ir = false;
+        std::vector<std::string> auth_mechanisms;
+        std::vector<std::string> raw_tokens;
+
+        void reset()
+        {
+            sasl_ir = false;
+            auth_mechanisms.clear();
+            raw_tokens.clear();
         }
     };
 
-} // namespace mailio
+    std::string resolve_sni(std::string_view host, std::string sni) const
+    {
+        if (sni.empty())
+            sni.assign(host.begin(), host.end());
+        mailio::detail::ensure_no_crlf_or_nul(sni, "sni");
+        return sni;
+    }
+
+    dialog_type& dialog()
+    {
+        if (!dialog_.has_value())
+            throw error("Connection is not established.", "");
+        return *dialog_;
+    }
+
+    void configure_trace()
+    {
+        if (!dialog_.has_value())
+            return;
+        dialog_->set_trace_protocol("IMAP");
+        dialog_->set_trace_redaction(options_.redact_secrets_in_trace);
+    }
+
+    void trace_payload(std::string_view label, std::size_t bytes) const
+    {
+        auto& logger = mailio::log::logger::instance();
+        if (!logger.is_trace_enabled())
+            return;
+        std::string line;
+        line.reserve(label.size() + 32);
+        mailio::detail::append_sv(line, label);
+        mailio::detail::append_sv(line, " literal bytes=");
+        mailio::detail::append_uint(line, static_cast<std::uint64_t>(bytes));
+        if (options_.redact_secrets_in_trace)
+            line = mailio::detail::redact_line(line);
+        logger.trace_protocol("IMAP", mailio::log::direction::send, line);
+    }
+
+    void reset_capabilities() noexcept
+    {
+        capabilities_.reset();
+        capabilities_known_ = false;
+    }
+
+    awaitable<void> connect_impl(const std::string& host, const std::string& service,
+        mailio::net::tls_mode mode = mailio::net::tls_mode::none,
+        ssl::context* tls_ctx = nullptr, std::string sni = {})
+    {
+        if (dialog_.has_value())
+            throw error("Connection is already established.", "");
+        mailio::detail::ensure_no_crlf_or_nul(host, "host");
+        mailio::detail::ensure_no_crlf_or_nul(service, "service");
+        remote_host_ = host;
+
+        tcp::resolver resolver(executor_);
+        auto endpoints = co_await resolver.async_resolve(host, service, use_awaitable);
+
+        mailio::net::upgradable_stream stream(executor_);
+        co_await async_connect(stream.lowest_layer(), endpoints, use_awaitable);
+
+        if (mode == mailio::net::tls_mode::implicit)
+        {
+            if (tls_ctx == nullptr)
+                throw error("TLS context is required.", "Implicit TLS needs a context.");
+            std::string resolved_sni = resolve_sni(host, std::move(sni));
+            co_await stream.start_tls(*tls_ctx, std::move(resolved_sni), options_.tls);
+        }
+
+        dialog_.emplace(std::move(stream), options_.max_line_length, options_.timeout);
+        configure_trace();
+        tag_counter_ = 0;
+        reset_capabilities();
+
+        if (mode == mailio::net::tls_mode::starttls && options_.auto_starttls)
+        {
+            if (tls_ctx == nullptr)
+                throw error("TLS context is required.", "STARTTLS needs a context.");
+            co_await read_greeting_impl();
+            co_await start_tls_impl(*tls_ctx, std::move(sni));
+            (void)co_await capability_impl();
+        }
+    }
+
+    awaitable<response> read_greeting_impl()
+    {
+        response resp;
+        std::string line = co_await dialog().read_line(use_awaitable);
+        handle_line(resp, line, std::string_view{});
+        update_literal_plus_from_line(line);
+        std::size_t literal_size = 0;
+        if (extract_literal_size(line, literal_size))
+        {
+            resp.literals.push_back(co_await dialog().read_exactly(literal_size, use_awaitable));
+        }
+        co_return resp;
+    }
+
+    awaitable<response> login_impl(std::string_view username, std::string_view password)
+    {
+        enforce_auth_tls_policy();
+        mailio::detail::ensure_no_crlf_or_nul(username, "username");
+        mailio::detail::ensure_no_crlf_or_nul(password, "password");
+        const std::string user = mailio::imap::to_astring(username);
+        const std::string pass = mailio::imap::to_astring(password);
+        std::string cmd;
+        mailio::detail::append_sv(cmd, "LOGIN");
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, user);
+        mailio::detail::append_space(cmd);
+        mailio::detail::append_sv(cmd, pass);
+        co_return co_await command_impl(cmd);
+    }
+
+    awaitable<response> capability_impl()
+    {
+        response resp = co_await command_impl("CAPABILITY");
+        update_literal_plus(resp);
+        parse_capabilities(resp);
+        capabilities_known_ = true;
+        co_return resp;
+    }
+
+    awaitable<response> authenticate_impl(credentials cred, auth_method method)
+    {
+        mailio::detail::ensure_no_crlf_or_nul(cred.username, "username");
+        mailio::detail::ensure_no_crlf_or_nul(cred.secret, "secret");
+
+        if (!capabilities_known_
+            && (method == auth_method::auto_detect || method == auth_method::plain || method == auth_method::xoauth2))
+        {
+            (void)co_await capability_impl();
+        }
+
+        auth_method resolved = method;
+        if (method == auth_method::auto_detect)
+            resolved = resolve_auth_method();
+
+        switch (resolved)
+        {
+            case auth_method::plain:
+                co_return co_await authenticate_plain_impl(cred);
+            case auth_method::xoauth2:
+                co_return co_await authenticate_xoauth2_impl(cred);
+            case auth_method::login:
+                co_return co_await login_impl(cred.username, cred.secret);
+            case auth_method::auto_detect:
+                break;
+        }
+
+        co_return co_await login_impl(cred.username, cred.secret);
+    }
+
+    awaitable<response> authenticate_plain_impl(const credentials& cred)
+    {
+        enforce_auth_tls_policy();
+        std::string encoded = mailio::sasl::encode_plain(cred.username, cred.secret);
+        mailio::detail::ensure_no_crlf_or_nul(encoded, "sasl_plain");
+
+        if (capabilities_.sasl_ir)
+        {
+            std::string cmd;
+            mailio::detail::append_sv(cmd, "AUTHENTICATE PLAIN");
+            mailio::detail::append_space(cmd);
+            mailio::detail::append_sv(cmd, encoded);
+            co_return co_await command_with_one_continuation(cmd, "");
+        }
+
+        co_return co_await command_with_one_continuation("AUTHENTICATE PLAIN", encoded);
+    }
+
+    awaitable<response> authenticate_xoauth2_impl(const credentials& cred)
+    {
+        enforce_auth_tls_policy();
+        std::string encoded = mailio::sasl::encode_xoauth2(cred.username, cred.secret);
+        mailio::detail::ensure_no_crlf_or_nul(encoded, "sasl_xoauth2");
+
+        if (capabilities_.sasl_ir)
+        {
+            std::string cmd;
+            mailio::detail::append_sv(cmd, "AUTHENTICATE XOAUTH2");
+            mailio::detail::append_space(cmd);
+            mailio::detail::append_sv(cmd, encoded);
+            co_return co_await command_with_one_continuation(cmd, "");
+        }
+
+        co_return co_await command_with_one_continuation("AUTHENTICATE XOAUTH2", encoded);
+    }
+
+    awaitable<void> start_tls_impl(ssl::context& context, std::string sni)
+    {
+        response resp = co_await command_impl("STARTTLS");
+        if (resp.st != status::ok)
+            throw error("STARTTLS failure.", resp.text);
+
+        dialog_type& dlg = dialog();
+        const std::size_t max_len = dlg.max_line_length();
+        const auto timeout = dlg.timeout();
+
+        mailio::net::upgradable_stream stream = std::move(dlg.stream());
+        std::string resolved_sni = resolve_sni(remote_host_, std::move(sni));
+        co_await stream.start_tls(context, std::move(resolved_sni), options_.tls);
+
+        dialog_.emplace(std::move(stream), max_len, timeout);
+        configure_trace();
+        reset_capabilities();
+    }
+
+    awaitable<response> command_impl(std::string_view cmd)
+    {
+        mailio::detail::ensure_no_crlf_or_nul(cmd, "command");
+
+        std::string tag = std::to_string(++tag_counter_);
+
+        std::string line = tag;
+        if (!cmd.empty())
+        {
+            mailio::detail::append_space(line);
+            mailio::detail::append_sv(line, cmd);
+        }
+
+        co_await dialog().write_line(line, use_awaitable);
+        co_return co_await read_response_impl(tag);
+    }
+
+    void enforce_auth_tls_policy()
+    {
+        mailio::detail::ensure_auth_allowed<error>(dialog().stream().is_tls(), options_);
+    }
+
+    awaitable<response> command_with_one_continuation(std::string_view cmd, std::string_view continuation_line)
+    {
+        mailio::detail::ensure_no_crlf_or_nul(cmd, "command");
+        mailio::detail::ensure_no_crlf_or_nul(continuation_line, "continuation");
+
+        std::string tag = std::to_string(++tag_counter_);
+
+        std::string line = tag;
+        if (!cmd.empty())
+        {
+            mailio::detail::append_space(line);
+            mailio::detail::append_sv(line, cmd);
+        }
+
+        co_await dialog().write_line(line, use_awaitable);
+
+        response resp;
+        resp.tag = tag;
+
+        bool continuation_sent = false;
+        while (true)
+        {
+            std::string resp_line = co_await dialog().read_line(use_awaitable);
+            handle_line(resp, resp_line, tag);
+
+            std::size_t literal_size = 0;
+            if (extract_literal_size(resp_line, literal_size))
+            {
+                resp.literals.push_back(co_await dialog().read_exactly(literal_size, use_awaitable));
+            }
+
+            if (!continuation_sent && !resp_line.empty() && resp_line[0] == '+')
+            {
+                continuation_sent = true;
+                co_await dialog().write_line(continuation_line, use_awaitable);
+            }
+
+            if (is_tagged_line(resp_line, tag))
+                break;
+        }
+
+        co_return resp;
+    }
+
+    awaitable<response> append_raw_impl(std::string_view mailbox, std::string_view data,
+        std::string_view flags, std::string_view date_time)
+    {
+        const bool use_literal_plus = literal_plus_.has_value() && *literal_plus_;
+        std::string cmd = mailio::imap::detail::build_append_command(
+            mailbox, data.size(), flags, date_time, use_literal_plus);
+
+        std::string tag = std::to_string(++tag_counter_);
+        std::string line = tag;
+        mailio::detail::append_space(line);
+        mailio::detail::append_sv(line, cmd);
+
+        co_await dialog().write_line(line, use_awaitable);
+
+        response resp;
+        resp.tag = tag;
+
+        if (!use_literal_plus)
+        {
+            bool got_continuation = false;
+            while (true)
+            {
+                std::string resp_line = co_await dialog().read_line(use_awaitable);
+                handle_line(resp, resp_line, tag);
+                std::size_t literal_size = 0;
+                if (extract_literal_size(resp_line, literal_size))
+                {
+                    resp.literals.push_back(co_await dialog().read_exactly(literal_size, use_awaitable));
+                }
+
+                if (!resp_line.empty() && resp_line[0] == '+')
+                {
+                    got_continuation = true;
+                    break;
+                }
+
+                if (is_tagged_line(resp_line, tag))
+                    co_return resp;
+            }
+
+            if (!got_continuation)
+                throw error("APPEND: expected continuation response.", "");
+        }
+
+        trace_payload("APPEND", data.size());
+        co_await dialog().write_raw(buffer(data.data(), data.size()), use_awaitable);
+        co_await read_response_until_tag(resp, tag);
+        co_return resp;
+    }
+
+    awaitable<response> read_response_impl(const std::string& tag)
+    {
+        response resp;
+        resp.tag = tag;
+
+        co_await read_response_until_tag(resp, tag);
+        co_return resp;
+    }
+
+    awaitable<void> read_response_until_tag(response& resp, const std::string& tag)
+    {
+        while (true)
+        {
+            std::string line = co_await dialog().read_line(use_awaitable);
+            handle_line(resp, line, tag);
+
+            std::size_t literal_size = 0;
+            if (extract_literal_size(line, literal_size))
+            {
+                resp.literals.push_back(co_await dialog().read_exactly(literal_size, use_awaitable));
+            }
+
+            if (is_tagged_line(line, tag))
+                break;
+        }
+    }
+
+    static bool extract_literal_size(std::string_view line, std::size_t& out)
+    {
+        if (line.size() < 3 || line.back() != '}')
+            return false;
+
+        const auto brace = line.rfind('{');
+        if (brace == std::string_view::npos)
+            return false;
+
+        std::string_view inner = line.substr(brace + 1, line.size() - brace - 2);
+        if (inner.empty())
+            return false;
+
+        if (inner.back() == '+')
+            inner.remove_suffix(1);
+        if (inner.empty())
+            return false;
+
+        std::size_t value = 0;
+        for (char ch : inner)
+        {
+            if (ch < '0' || ch > '9')
+                return false;
+            value = value * 10 + static_cast<std::size_t>(ch - '0');
+        }
+
+        out = value;
+        return true;
+    }
+
+    static bool is_tagged_line(std::string_view line, std::string_view tag)
+    {
+        if (tag.empty() || line.size() < tag.size())
+            return false;
+        if (!line.starts_with(tag))
+            return false;
+        if (line.size() <= tag.size())
+            return false;
+        return line[tag.size()] == ' ';
+    }
+
+    static std::string_view ltrim(std::string_view text)
+    {
+        while (!text.empty() && text.front() == ' ')
+            text.remove_prefix(1);
+        return text;
+    }
+
+    static bool iequals_ascii(std::string_view a, std::string_view b)
+    {
+        if (a.size() != b.size())
+            return false;
+        for (std::size_t i = 0; i < a.size(); ++i)
+        {
+            char ca = a[i];
+            char cb = b[i];
+            if (ca >= 'a' && ca <= 'z')
+                ca = static_cast<char>(ca - ('a' - 'A'));
+            if (cb >= 'a' && cb <= 'z')
+                cb = static_cast<char>(cb - ('a' - 'A'));
+            if (ca != cb)
+                return false;
+        }
+        return true;
+    }
+
+    static bool starts_with_ci(std::string_view text, std::string_view prefix)
+    {
+        if (text.size() < prefix.size())
+            return false;
+        return iequals_ascii(text.substr(0, prefix.size()), prefix);
+    }
+
+    static std::pair<std::string_view, std::string_view> split_token(std::string_view text)
+    {
+        text = ltrim(text);
+        auto pos = text.find(' ');
+        if (pos == std::string_view::npos)
+            return {text, std::string_view{}};
+        return {text.substr(0, pos), ltrim(text.substr(pos + 1))};
+    }
+
+    static bool parse_quoted_string(std::string_view& text, std::string& out)
+    {
+        text = ltrim(text);
+        if (text.empty() || text.front() != '"')
+            return false;
+        text.remove_prefix(1);
+        out.clear();
+        while (!text.empty())
+        {
+            char ch = text.front();
+            text.remove_prefix(1);
+            if (ch == '"')
+            {
+                text = ltrim(text);
+                return true;
+            }
+            if (ch == '\\' && !text.empty())
+            {
+                out.push_back(text.front());
+                text.remove_prefix(1);
+                continue;
+            }
+            out.push_back(ch);
+        }
+        return false;
+    }
+
+    static bool parse_atom(std::string_view& text, std::string& out)
+    {
+        text = ltrim(text);
+        if (text.empty())
+            return false;
+        auto pos = text.find(' ');
+        std::string_view token = pos == std::string_view::npos ? text : text.substr(0, pos);
+        out.assign(token.begin(), token.end());
+        text = pos == std::string_view::npos ? std::string_view{} : ltrim(text.substr(pos + 1));
+        return true;
+    }
+
+    static bool parse_quoted_or_atom(std::string_view& text, std::string& out)
+    {
+        text = ltrim(text);
+        if (text.empty())
+            return false;
+        if (text.front() == '"')
+            return parse_quoted_string(text, out);
+        return parse_atom(text, out);
+    }
+
+    static void parse_list_attributes(std::string_view attrs, std::vector<std::string>& out)
+    {
+        out.clear();
+        attrs = ltrim(attrs);
+        while (!attrs.empty())
+        {
+            auto [token, rest] = split_token(attrs);
+            if (!token.empty())
+                out.emplace_back(token.begin(), token.end());
+            attrs = rest;
+        }
+    }
+
+    static bool parse_list_line(std::string_view line, mailbox_folder& folder)
+    {
+        line = ltrim(line);
+        auto [star, rest] = split_token(line);
+        if (star != "*")
+            return false;
+        auto [keyword, rest2] = split_token(rest);
+        if (!iequals_ascii(keyword, "LIST"))
+            return false;
+        rest2 = ltrim(rest2);
+        if (rest2.empty() || rest2.front() != '(')
+            return false;
+        auto close = rest2.find(')');
+        if (close == std::string_view::npos)
+            return false;
+        std::string_view attrs = rest2.substr(1, close - 1);
+        parse_list_attributes(attrs, folder.attributes);
+
+        rest2 = ltrim(rest2.substr(close + 1));
+        std::string delimiter_token;
+        if (!parse_quoted_or_atom(rest2, delimiter_token))
+            return false;
+        if (!delimiter_token.empty() && !iequals_ascii(delimiter_token, "NIL"))
+            folder.delimiter = delimiter_token.front();
+        else
+            folder.delimiter = '\0';
+
+        std::string name_token;
+        if (!parse_quoted_or_atom(rest2, name_token))
+            return false;
+        if (!iequals_ascii(name_token, "NIL"))
+            folder.name = std::move(name_token);
+        else
+            folder.name.clear();
+
+        return true;
+    }
+
+    static std::string build_store_item(std::string_view item_name, std::string_view mode)
+    {
+        std::string item;
+        if (mode.empty())
+        {
+            mailio::detail::append_sv(item, item_name);
+            return item;
+        }
+        if (item_name.empty())
+        {
+            mailio::detail::append_sv(item, mode);
+            return item;
+        }
+        if (iequals_ascii(mode, "FLAGS") && starts_with_ci(item_name, "FLAGS"))
+        {
+            mailio::detail::append_sv(item, item_name);
+            return item;
+        }
+        if ((mode.front() == '+' || mode.front() == '-') && iequals_ascii(mode.substr(1), "FLAGS")
+            && starts_with_ci(item_name, "FLAGS"))
+        {
+            mailio::detail::append_char(item, mode.front());
+            mailio::detail::append_sv(item, item_name);
+            return item;
+        }
+        mailio::detail::append_sv(item, mode);
+        mailio::detail::append_space(item);
+        mailio::detail::append_sv(item, item_name);
+        return item;
+    }
+
+    static std::string to_upper_ascii(std::string_view input)
+    {
+        std::string out;
+        out.reserve(input.size());
+        for (char ch : input)
+        {
+            if (ch >= 'a' && ch <= 'z')
+                out.push_back(static_cast<char>(ch - ('a' - 'A')));
+            else
+                out.push_back(ch);
+        }
+        return out;
+    }
+
+    static status parse_status_word(std::string_view word)
+    {
+        const std::string upper = to_upper_ascii(word);
+        if (upper == "OK")
+            return status::ok;
+        if (upper == "NO")
+            return status::no;
+        if (upper == "BAD")
+            return status::bad;
+        if (upper == "PREAUTH")
+            return status::preauth;
+        if (upper == "BYE")
+            return status::bye;
+        return status::unknown;
+    }
+
+    static void apply_status_from_untagged(response& resp, std::string_view line)
+    {
+        std::string_view rest = ltrim(line.substr(1));
+        auto [word, tail] = split_token(rest);
+        status st = parse_status_word(word);
+        if (st != status::unknown && resp.st == status::unknown)
+        {
+            resp.st = st;
+            resp.text.assign(tail.begin(), tail.end());
+        }
+    }
+
+    static void apply_status_from_tagged(response& resp, std::string_view line, std::string_view tag)
+    {
+        std::string_view rest = ltrim(line.substr(tag.size()));
+        auto [word, tail] = split_token(rest);
+        status st = parse_status_word(word);
+        resp.st = st;
+        resp.text.assign(tail.begin(), tail.end());
+    }
+
+    static void handle_line(response& resp, const std::string& line, std::string_view tag)
+    {
+        if (!tag.empty() && is_tagged_line(line, tag))
+        {
+            resp.tagged_lines.push_back(line);
+            apply_status_from_tagged(resp, line, tag);
+            return;
+        }
+
+        if (!line.empty() && line[0] == '*')
+        {
+            resp.untagged_lines.push_back(line);
+            apply_status_from_untagged(resp, line);
+            return;
+        }
+
+        if (!line.empty() && line[0] == '+')
+        {
+            resp.continuation.push_back(line);
+            if (resp.st == status::unknown && resp.text.empty())
+            {
+                std::string_view rest = ltrim(line.substr(1));
+                resp.text.assign(rest.begin(), rest.end());
+            }
+            return;
+        }
+
+        resp.untagged_lines.push_back(line);
+    }
+
+    // Best-effort mapping of FETCH literals to untagged lines by appearance.
+    static std::string select_fetch_literal(const response& resp, std::string_view marker)
+    {
+        if (resp.literals.size() == 1)
+            return resp.literals.front();
+        if (resp.literals.empty())
+            return {};
+
+        const std::string marker_upper = to_upper_ascii(marker);
+        std::size_t literal_index = 0;
+        for (const auto& line : resp.untagged_lines)
+        {
+            std::size_t literal_size = 0;
+            const bool has_literal = extract_literal_size(line, literal_size);
+            if (!has_literal)
+                continue;
+
+            std::string upper_line = to_upper_ascii(line);
+            if (upper_line.find(marker_upper) != std::string::npos)
+            {
+                if (literal_index < resp.literals.size())
+                    return resp.literals[literal_index];
+                return {};
+            }
+
+            ++literal_index;
+            if (literal_index >= resp.literals.size())
+                break;
+        }
+
+        return {};
+    }
+
+    void parse_capabilities(const response& resp)
+    {
+        capabilities_.reset();
+        for (const auto& line : resp.untagged_lines)
+            parse_capability_line(capabilities_, line);
+        for (const auto& line : resp.tagged_lines)
+            parse_capability_line(capabilities_, line);
+    }
+
+    auth_method resolve_auth_method() const
+    {
+        if (has_auth_mechanism("XOAUTH2"))
+            return auth_method::xoauth2;
+        if (has_auth_mechanism("PLAIN"))
+            return auth_method::plain;
+        return auth_method::login;
+    }
+
+    bool has_auth_mechanism(std::string_view mechanism) const
+    {
+        const std::string key = to_upper_ascii(mechanism);
+        for (const auto& mech : capabilities_.auth_mechanisms)
+        {
+            if (mech == key)
+                return true;
+        }
+        return false;
+    }
+
+    static void parse_capability_line(capabilities_cache& caps, std::string_view line)
+    {
+        auto pos = line.find("CAPABILITY");
+        if (pos == std::string_view::npos)
+            return;
+        std::string_view rest = line.substr(pos + std::string_view("CAPABILITY").size());
+        rest = ltrim(rest);
+
+        bool sasl_list = false;
+        while (!rest.empty())
+        {
+            auto [token, remaining] = split_token(rest);
+            if (token.empty())
+                break;
+
+            token = normalize_capability_token(token);
+            if (token.empty())
+            {
+                rest = remaining;
+                continue;
+            }
+
+            caps.raw_tokens.push_back(to_upper_ascii(token));
+
+            if (iequals_ascii(token, "SASL-IR"))
+                caps.sasl_ir = true;
+
+            if (starts_with_ci(token, "AUTH="))
+            {
+                std::string_view mech = token.substr(5);
+                add_auth_mechanism(caps, mech);
+            }
+            else if (starts_with_ci(token, "SASL="))
+            {
+                std::string_view list = token.substr(5);
+                add_auth_mechanisms_from_list(caps, list);
+            }
+            else if (iequals_ascii(token, "SASL"))
+            {
+                sasl_list = true;
+            }
+            else if (sasl_list)
+            {
+                if (!iequals_ascii(token, "SASL-IR"))
+                    add_auth_mechanism(caps, token);
+            }
+
+            rest = remaining;
+        }
+    }
+
+    static void add_auth_mechanism(capabilities_cache& caps, std::string_view mechanism)
+    {
+        mechanism = normalize_capability_token(mechanism);
+        if (mechanism.empty())
+            return;
+        std::string upper = to_upper_ascii(mechanism);
+        for (const auto& existing : caps.auth_mechanisms)
+        {
+            if (existing == upper)
+                return;
+        }
+        caps.auth_mechanisms.push_back(std::move(upper));
+    }
+
+    static void add_auth_mechanisms_from_list(capabilities_cache& caps, std::string_view list)
+    {
+        while (!list.empty())
+        {
+            auto pos = list.find(',');
+            std::string_view token = pos == std::string_view::npos ? list : list.substr(0, pos);
+            add_auth_mechanism(caps, token);
+            if (pos == std::string_view::npos)
+                break;
+            list.remove_prefix(pos + 1);
+        }
+    }
+
+    static std::string_view normalize_capability_token(std::string_view token)
+    {
+        token = ltrim(token);
+        while (!token.empty() && (token.front() == '[' || token.front() == '('))
+            token.remove_prefix(1);
+        while (!token.empty() && (token.back() == ']' || token.back() == ')'))
+            token.remove_suffix(1);
+        return token;
+    }
+
+    executor_type executor_;
+    options options_;
+    mailio::detail::async_mutex mutex_;
+    std::optional<dialog_type> dialog_;
+    std::string remote_host_;
+    std::uint64_t tag_counter_{0};
+    capabilities_cache capabilities_;
+    bool capabilities_known_{false};
+    std::optional<bool> literal_plus_;
+
+    void update_literal_plus(const response& resp)
+    {
+        bool found_caps = false;
+        bool has_literal_plus = false;
+        for (const auto& line : resp.untagged_lines)
+        {
+            if (line_has_capability(line, found_caps))
+                has_literal_plus = true;
+        }
+        for (const auto& line : resp.tagged_lines)
+        {
+            if (line_has_capability(line, found_caps))
+                has_literal_plus = true;
+        }
+        if (found_caps)
+            literal_plus_ = has_literal_plus;
+    }
+
+    void update_literal_plus_from_line(std::string_view line)
+    {
+        bool found_caps = false;
+        bool has_literal_plus = line_has_capability(line, found_caps);
+        if (found_caps)
+            literal_plus_ = has_literal_plus;
+    }
+
+    static bool line_has_capability(std::string_view line, bool& found_caps)
+    {
+        auto pos = line.find("CAPABILITY");
+        if (pos == std::string_view::npos)
+            return false;
+        found_caps = true;
+        std::string_view rest = line.substr(pos + std::string_view("CAPABILITY").size());
+        rest = ltrim(rest);
+        while (!rest.empty())
+        {
+            auto [token, remaining] = split_token(rest);
+            if (token.empty())
+                break;
+            if (token_has_literal_plus(token))
+                return true;
+            rest = remaining;
+        }
+        return false;
+    }
+
+    static bool token_has_literal_plus(std::string_view token)
+    {
+        token = normalize_capability_token(token);
+        return iequals_ascii(token, "LITERAL+");
+    }
+};
+
+} // namespace mailio::imap

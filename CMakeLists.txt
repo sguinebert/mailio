@@ -83,6 +83,7 @@ set(project_headers
     ${PROJECT_SOURCE_DIR}/include/mailio/pop3.hpp
     ${PROJECT_SOURCE_DIR}/include/mailio/smtp.hpp
     ${PROJECT_SOURCE_DIR}/include/mailio/detail/append.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/detail/async_mutex.hpp
     ${PROJECT_SOURCE_DIR}/include/mailio/detail/ascii.hpp
     ${PROJECT_SOURCE_DIR}/include/mailio/codec/base64.hpp
     ${PROJECT_SOURCE_DIR}/include/mailio/codec/binary.hpp

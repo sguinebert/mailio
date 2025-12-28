@@ -6,7 +6,7 @@ pop3_remove_msg.cpp
 Connects to a POP3 server and removes the first message in mailbox.
 
 
-Copyright (C) 2016, Tomislav Karastojkovic (http://www.alepho.com).
+Copyright (C) 2025, Sylvain Guinebert (github.com/sguinebert).
 
 Distributed under the FreeBSD license, see the accompanying file LICENSE or
 copy at http://www.freebsd.org/copyright/freebsd-license.html.
@@ -15,38 +15,59 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 
 
 #include <iostream>
+#include <boost/asio.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/ssl.hpp>
+#include <boost/asio/use_awaitable.hpp>
+#include <mailio/net/tls_mode.hpp>
 #include <mailio/pop3/client.hpp>
 
 
-using mailio::pop3;
-using mailio::pop3_error;
-using mailio::dialog_error;
+using mailio::pop3::client;
+using mailio::pop3::error;
+using mailio::net::dialog_error;
 using std::cout;
 using std::endl;
 
 
 int main()
 {
-    try
-    {
-        // use a server with plain (non-SSL) connectivity
-        pop3 conn("pop.mailserver.com", 110);
-        conn.ssl_options(std::nullopt);// no SSL settings means no TLS connection
-        conn.start_tls(false);// disable the start tls too
-        // modify to use real account
-        conn.authenticate("mailio@mailserver.com", "mailiopass", pop3::auth_method_t::LOGIN);
-        // remove first message from mailbox
-        conn.remove(1);
-    }
-    catch (pop3_error& exc)
-    {
-        cout << exc.what() << endl;
-    }
-    catch (dialog_error& exc)
-    {
-        cout << exc.what() << endl;
-    }
+    boost::asio::io_context io_ctx;
+    boost::asio::ssl::context ssl_ctx(boost::asio::ssl::context::tls_client);
 
+    boost::asio::co_spawn(io_ctx,
+        [&]() -> boost::asio::awaitable<void>
+        {
+            try
+            {
+                mailio::pop3::options options;
+                options.tls.use_default_verify_paths = true;
+                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify_host = true;
+
+                client conn(io_ctx.get_executor(), options);
+                co_await conn.connect("pop.mailserver.com", "995",
+                    mailio::net::tls_mode::implicit, &ssl_ctx, "pop.mailserver.com");
+                co_await conn.read_greeting();
+                // modify to use real account
+                co_await conn.login("mailio@mailserver.com", "mailiopass");
+                // remove first message from mailbox
+                co_await conn.dele(1);
+                co_await conn.quit();
+            }
+            catch (const error& exc)
+            {
+                cout << exc.what() << endl;
+            }
+            catch (const dialog_error& exc)
+            {
+                cout << exc.what() << endl;
+            }
+            co_return;
+        },
+        boost::asio::detached);
+
+    io_ctx.run();
     return EXIT_SUCCESS;
 }
-

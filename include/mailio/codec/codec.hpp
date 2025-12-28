@@ -3,7 +3,7 @@
 codec.hpp
 ---------
 
-Copyright (C) 2016, Tomislav Karastojkovic (http://www.alepho.com).
+Copyright (C) 2025, Sylvain Guinebert (github.com/sguinebert).
 
 Distributed under the FreeBSD license, see the accompanying file LICENSE or
 copy at http://www.freebsd.org/copyright/freebsd-license.html.
@@ -153,7 +153,7 @@ public:
     /**
     Equal character as string.
     **/
-    static constexpr std::string_view EQUAL_STR{"="};
+    inline static const std::string EQUAL_STR{"="};
 
     /**
     Space character.
@@ -163,7 +163,7 @@ public:
     /**
     Space character as string.
     **/
-    static constexpr std::string_view SPACE_STR{" "};
+    inline static const std::string SPACE_STR{" "};
 
     /**
     Exclamation mark character.
@@ -183,7 +183,7 @@ public:
     /**
     Dot character string.
     **/
-    static constexpr std::string_view DOT_STR{"."};
+    inline static const std::string DOT_STR{"."};
 
     /**
     Comma character.
@@ -193,7 +193,7 @@ public:
     /**
     Comma character as string.
     **/
-    static constexpr std::string_view COMMA_STR{","};
+    inline static const std::string COMMA_STR{","};
 
     /**
     Colon character.
@@ -203,7 +203,7 @@ public:
     /**
     Colon character as string.
     **/
-    static constexpr std::string_view COLON_STR{":"};
+    inline static const std::string COLON_STR{":"};
 
     /**
     Semicolon character.
@@ -213,7 +213,7 @@ public:
     /**
     Semicolon character as string.
     **/
-    static constexpr std::string_view SEMICOLON_STR{";"};
+    inline static const std::string SEMICOLON_STR{";"};
 
     /**
     Zero number character.
@@ -243,7 +243,7 @@ public:
     /**
     Quote character as string.
     **/
-    static constexpr std::string_view QUOTE_STR{"\""};
+    inline static const std::string QUOTE_STR{"\""};
 
     /**
     Left parenthesis character.
@@ -288,7 +288,7 @@ public:
     /**
     Less than character as string.
     **/
-    static constexpr std::string_view LESS_THAN_STR{"<"};
+    inline static const std::string LESS_THAN_STR{"<"};
 
     /**
     Greater than character.
@@ -298,7 +298,7 @@ public:
     /**
     Greater than character as string.
     **/
-    static constexpr std::string_view GREATER_THAN_STR{">"};
+    inline static const std::string GREATER_THAN_STR{">"};
 
     /**
     Underscore character.
@@ -308,27 +308,27 @@ public:
     /**
     Hexadecimal alphabet.
     **/
-    static constexpr std::string_view HEX_DIGITS{"0123456789ABCDEF"};
+    inline static const std::string HEX_DIGITS{"0123456789ABCDEF"};
 
     /**
     Carriage return plus line feed string.
     **/
-    static constexpr std::string_view END_OF_LINE{"\r\n"};
+    inline static const std::string END_OF_LINE{"\r\n"};
 
     /**
     Dot character is the end of message for SMTP.
     **/
-    static constexpr std::string_view END_OF_MESSAGE{"."};
+    inline static const std::string END_OF_MESSAGE{"."};
 
     /**
     ASCII charset label.
     **/
-    static constexpr std::string_view CHARSET_ASCII{"ASCII"};
+    inline static const std::string CHARSET_ASCII{"ASCII"};
 
     /**
     UTF-8 charset label.
     **/
-    static constexpr std::string_view CHARSET_UTF8{"UTF-8"};
+    inline static const std::string CHARSET_UTF8{"UTF-8"};
 
     /**
     Attribute indicator for the charset and language parameters.
@@ -338,7 +338,7 @@ public:
     /**
     Attribute indicator for the charset and language parameters as string.
     **/
-    static constexpr std::string_view ATTRIBUTE_CHARSET_SEPARATOR_STR{"'"};
+    inline static const std::string ATTRIBUTE_CHARSET_SEPARATOR_STR{"'"};
 
     /**
     Line length policy.

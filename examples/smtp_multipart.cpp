@@ -1,4 +1,4 @@
-﻿/*
+/*
 
 smtps_multipart.cpp
 -------------------
@@ -6,7 +6,7 @@ smtps_multipart.cpp
 Connects to an SMTP server via START_TLS and sends a multipart message.
 
 
-Copyright (C) 2023, Tomislav Karastojkovic (http://www.alepho.com).
+Copyright (C) 2025, Sylvain Guinebert (github.com/sguinebert).
 
 Distributed under the FreeBSD license, see the accompanying file LICENSE or
 copy at http://www.freebsd.org/copyright/freebsd-license.html.
@@ -23,6 +23,7 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <mailio/mime/message.hpp>
+#include <mailio/net/tls_mode.hpp>
 #include <mailio/smtp/client.hpp>
 
 
@@ -32,7 +33,7 @@ using mailio::mime;
 using mailio::smtp::auth_method;
 using mailio::smtp::client;
 using mailio::smtp::error;
-using mailio::dialog_error;
+using mailio::net::dialog_error;
 using std::cout;
 using std::endl;
 using std::ifstream;
@@ -60,7 +61,7 @@ int main()
                 mime title;
                 title.content_type(message::media_type_t::TEXT, "html", "utf-8");
                 title.content_transfer_encoding(mime::content_transfer_encoding_t::BIT_8);
-                title.content("<html><head></head><body><h1>Здраво, Свете!</h1></body></html>");
+                title.content("<html><head></head><body><h1>??????, ?????!</h1></body></html>");
 
                 ifstream ifs("aleph0.png");
                 ostringstream ofs;
@@ -77,12 +78,15 @@ int main()
                 msg.add_part(img);
 
                 // connect to server over start tls
-                client conn(io_ctx.get_executor());
-                co_await conn.connect("smtp.mailserver.com", "587");
-                co_await conn.read_greeting();
-                co_await conn.ehlo();
-                co_await conn.start_tls(ssl_ctx, "smtp.mailserver.com");
-                co_await conn.ehlo();
+                mailio::smtp::options options;
+                options.tls.use_default_verify_paths = true;
+                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify_host = true;
+                options.auto_starttls = true;
+
+                client conn(io_ctx.get_executor(), options);
+                co_await conn.connect("smtp.mailserver.com", "587",
+                    mailio::net::tls_mode::starttls, &ssl_ctx, "smtp.mailserver.com");
 
                 // modify username/password to use real credentials
                 co_await conn.authenticate("mailio@mailserver.com", "mailiopass", auth_method::login);

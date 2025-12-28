@@ -1,3 +1,14 @@
 #pragma once
 
-#include <mailio/pop3/client.hpp>
+#include <mailio/net/dialog.hpp>
+
+namespace mailio::pop3
+{
+
+class error : public mailio::net::dialog_error
+{
+public:
+    using mailio::net::dialog_error::dialog_error;
+};
+
+} // namespace mailio::pop3

@@ -27,8 +27,6 @@ module;
 #include <optional>
 #include <boost/asio.hpp>
 #include <boost/asio/ssl.hpp>
-#include <boost/algorithm/string.hpp>
-#include <boost/regex.hpp>
 
 export module mailio.imap;
 

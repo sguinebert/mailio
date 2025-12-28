@@ -28,4 +28,5 @@ export module mailio.net;
 export {
     #include <mailio/net/upgradable_stream.hpp>
     #include <mailio/net/dialog.hpp>
+    #include <mailio/net/tls_mode.hpp>
 }

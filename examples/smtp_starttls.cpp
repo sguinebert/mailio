@@ -5,6 +5,7 @@
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <mailio/mime/message.hpp>
+#include <mailio/net/tls_mode.hpp>
 #include <mailio/smtp/client.hpp>
 
 using mailio::message;
@@ -12,18 +13,21 @@ using mailio::mail_address;
 using mailio::smtp::auth_method;
 using mailio::smtp::client;
 using mailio::smtp::error;
-using mailio::dialog_error;
+using mailio::net::dialog_error;
 
 boost::asio::awaitable<void> send_email(boost::asio::io_context& io_ctx, boost::asio::ssl::context& ssl_ctx)
 {
     try
     {
-        client conn(io_ctx.get_executor());
-        co_await conn.connect("smtp.gmail.com", "587");
-        co_await conn.read_greeting();
-        co_await conn.ehlo();
-        co_await conn.start_tls(ssl_ctx, "smtp.gmail.com");
-        co_await conn.ehlo();
+        mailio::smtp::options options;
+        options.tls.use_default_verify_paths = true;
+        options.tls.verify = mailio::net::verify_mode::peer;
+        options.tls.verify_host = true;
+        options.auto_starttls = true;
+
+        client conn(io_ctx.get_executor(), options);
+        co_await conn.connect("smtp.gmail.com", "587",
+            mailio::net::tls_mode::starttls, &ssl_ctx, "smtp.gmail.com");
 
         co_await conn.authenticate("user@gmail.com", "password", auth_method::login);
 
@@ -54,8 +58,6 @@ int main()
     {
         boost::asio::io_context io_ctx;
         boost::asio::ssl::context ssl_ctx(boost::asio::ssl::context::tls_client);
-        ssl_ctx.set_default_verify_paths();
-        ssl_ctx.set_verify_mode(boost::asio::ssl::verify_none); // For testing
 
         boost::asio::co_spawn(io_ctx, send_email(io_ctx, ssl_ctx), boost::asio::detached);
         io_ctx.run();

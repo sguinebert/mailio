@@ -3,10 +3,11 @@
 imaps_search.cpp
 ----------------
 
-Connects to an IMAP server over START TLS and searches for the messages which satisfy the criteria.
+Connects to an IMAP server over TLS and searches for messages
+that satisfy the criteria.
 
 
-Copyright (C) 2016, Tomislav Karastojkovic (http://www.alepho.com).
+Copyright (C) 2025, Sylvain Guinebert (github.com/sguinebert).
 
 Distributed under the FreeBSD license, see the accompanying file LICENSE or
 copy at http://www.freebsd.org/copyright/freebsd-license.html.
@@ -14,52 +15,71 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 */
 
 
-#include <algorithm>
 #include <iostream>
-#include <list>
-#include <string>
-#include <chrono>
+#include <boost/asio.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/ssl.hpp>
+#include <boost/asio/use_awaitable.hpp>
 #include <mailio/imap/client.hpp>
+#include <mailio/net/tls_mode.hpp>
 
 
-using mailio::message;
-using mailio::codec;
-using mailio::imap;
-using mailio::imap_error;
-using mailio::dialog_error;
+using mailio::imap::client;
+using mailio::imap::error;
+using mailio::net::dialog_error;
 using std::cout;
 using std::endl;
-using std::for_each;
-using std::list;
-using std::string;
 
 
 int main()
 {
-    try
-    {
-        imap conn("imap-mail.outlook.com", 143);
-        conn.start_tls(true);// // no need for this since it is the default setting
-        // modify username/password to use real credentials
-        conn.authenticate("mailio@outlook.com", "mailiopass", imap::auth_method_t::LOGIN);
-        conn.select(list<string>({"Inbox"}));
-        list<unsigned long> messages;
-        list<imap::search_condition_t> conds;
-        conds.push_back(imap::search_condition_t(imap::search_condition_t::BEFORE_DATE, 
-            std::chrono::year_month_day{std::chrono::year{2018}, std::chrono::month{6}, std::chrono::day{22}}));
-        conds.push_back(imap::search_condition_t(imap::search_condition_t::SUBJECT, "mailio"));
-        conn.search(conds, messages, true);
-        for_each(messages.begin(), messages.end(), [](unsigned int msg_uid){ cout << msg_uid << endl; });
-    }
-    catch (imap_error& exc)
-    {
-        cout << exc.what() << endl;
-    }
-    catch (dialog_error& exc)
-    {
-        cout << exc.what() << endl;
-    }
+    boost::asio::io_context io_ctx;
+    boost::asio::ssl::context ssl_ctx(boost::asio::ssl::context::tls_client);
 
+    boost::asio::co_spawn(io_ctx,
+        [&]() -> boost::asio::awaitable<void>
+        {
+            try
+            {
+                mailio::imap::options options;
+                options.tls.use_default_verify_paths = true;
+                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify_host = true;
+
+                client conn(io_ctx.get_executor(), options);
+                co_await conn.connect("imap-mail.outlook.com", "993",
+                    mailio::net::tls_mode::implicit, &ssl_ctx, "imap-mail.outlook.com");
+                co_await conn.read_greeting();
+                // modify username/password to use real credentials
+                co_await conn.login("mailio@outlook.com", "mailiopass");
+
+                auto [select_resp, stat] = co_await conn.select("INBOX");
+                (void)select_resp;
+                (void)stat;
+
+                auto [search_resp, ids] = co_await conn.search("SUBJECT \"mailio\"", true);
+                (void)search_resp;
+                for (auto msg_uid : ids)
+                {
+                    cout << msg_uid << endl;
+                }
+
+                co_await conn.close();
+                co_await conn.logout();
+            }
+            catch (const error& exc)
+            {
+                cout << exc.what() << endl;
+            }
+            catch (const dialog_error& exc)
+            {
+                cout << exc.what() << endl;
+            }
+            co_return;
+        },
+        boost::asio::detached);
+
+    io_ctx.run();
     return EXIT_SUCCESS;
 }
-

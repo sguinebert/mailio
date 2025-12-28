@@ -6,7 +6,7 @@ smtps_simple_msg.cpp
 Connects to an SMTP server via START_TLS and sends a simple message.
 
 
-Copyright (C) 2016, Tomislav Karastojkovic (http://www.alepho.com).
+Copyright (C) 2025, Sylvain Guinebert (github.com/sguinebert).
 
 Distributed under the FreeBSD license, see the accompanying file LICENSE or
 copy at http://www.freebsd.org/copyright/freebsd-license.html.
@@ -21,6 +21,7 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
 #include <mailio/mime/message.hpp>
+#include <mailio/net/tls_mode.hpp>
 #include <mailio/smtp/client.hpp>
 
 
@@ -29,7 +30,7 @@ using mailio::mail_address;
 using mailio::smtp::auth_method;
 using mailio::smtp::client;
 using mailio::smtp::error;
-using mailio::dialog_error;
+using mailio::net::dialog_error;
 using std::cout;
 using std::endl;
 
@@ -52,12 +53,15 @@ int main()
                 msg.content("Hello, World!");
 
                 // connect to server
-                client conn(io_ctx.get_executor());
-                co_await conn.connect("smtp.gmail.com", "587");
-                co_await conn.read_greeting();
-                co_await conn.ehlo();
-                co_await conn.start_tls(ssl_ctx, "smtp.gmail.com");
-                co_await conn.ehlo();
+                mailio::smtp::options options;
+                options.tls.use_default_verify_paths = true;
+                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify_host = true;
+                options.auto_starttls = true;
+
+                client conn(io_ctx.get_executor(), options);
+                co_await conn.connect("smtp.gmail.com", "587",
+                    mailio::net::tls_mode::starttls, &ssl_ctx, "smtp.gmail.com");
 
                 // modify username/password to use real credentials
                 co_await conn.authenticate("mailio@gmail.com", "mailiopass", auth_method::login);

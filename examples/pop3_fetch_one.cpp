@@ -6,7 +6,7 @@ pop3s_fetch_one.cpp
 Connects to POP3 server via SSL and fetches the first message from mailbox.
 
 
-Copyright (C) 2016, Tomislav Karastojkovic (http://www.alepho.com).
+Copyright (C) 2025, Sylvain Guinebert (github.com/sguinebert).
 
 Distributed under the FreeBSD license, see the accompanying file LICENSE or
 copy at http://www.freebsd.org/copyright/freebsd-license.html.
@@ -14,47 +14,68 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 */
 
 
-#include <mailio/mime/message.hpp>
-#include <mailio/pop3/client.hpp>
 #include <iostream>
+#include <boost/asio.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/ssl.hpp>
+#include <boost/asio/use_awaitable.hpp>
+#include <mailio/mime/message.hpp>
+#include <mailio/net/tls_mode.hpp>
+#include <mailio/pop3/client.hpp>
 
 
-using mailio::message;
 using mailio::codec;
-using mailio::pop3;
-using mailio::pop3_error;
-using mailio::dialog_error;
+using mailio::message;
+using mailio::pop3::client;
+using mailio::pop3::error;
+using mailio::net::dialog_error;
 using std::cout;
 using std::endl;
 
 
 int main()
 {
-    try
-    {
-        // mail message to store the fetched one
-        message msg;
-        // set the line policy to mandatory, so longer lines could be parsed
-        msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
+    boost::asio::io_context io_ctx;
+    boost::asio::ssl::context ssl_ctx(boost::asio::ssl::context::tls_client);
 
-        // connect to server
-        pop3 conn("pop.mail.yahoo.com", 995);
-        conn.start_tls(false);
-        // modify to use existing yahoo account
-        conn.authenticate("mailio@yahoo.com", "mailiopass", pop3::auth_method_t::LOGIN);
-        // fetch the first message from mailbox
-        conn.fetch(1, msg);
-        cout << msg.subject() << endl;
-    }
-    catch (pop3_error& exc)
-    {
-        cout << exc.what() << endl;
-    }
-    catch (dialog_error& exc)
-    {
-        cout << exc.what() << endl;
-    }
+    boost::asio::co_spawn(io_ctx,
+        [&]() -> boost::asio::awaitable<void>
+        {
+            try
+            {
+                mailio::pop3::options options;
+                options.tls.use_default_verify_paths = true;
+                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify_host = true;
 
+                client conn(io_ctx.get_executor(), options);
+                co_await conn.connect("pop.mail.yahoo.com", "995",
+                    mailio::net::tls_mode::implicit, &ssl_ctx, "pop.mail.yahoo.com");
+                co_await conn.read_greeting();
+                // modify to use existing yahoo account
+                co_await conn.login("mailio@yahoo.com", "mailiopass");
+
+                std::string raw = co_await conn.retr(1);
+                message msg;
+                msg.line_policy(codec::line_len_policy_t::RECOMMENDED);
+                msg.parse(raw);
+                cout << msg.subject() << endl;
+
+                co_await conn.quit();
+            }
+            catch (const error& exc)
+            {
+                cout << exc.what() << endl;
+            }
+            catch (const dialog_error& exc)
+            {
+                cout << exc.what() << endl;
+            }
+            co_return;
+        },
+        boost::asio::detached);
+
+    io_ctx.run();
     return EXIT_SUCCESS;
 }
-

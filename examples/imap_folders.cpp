@@ -3,10 +3,10 @@
 imaps_folders.cpp
 -----------------
 
-Connects to an IMAP server over SSL and lists recursively all folders.
+Connects to an IMAP server over SSL and lists all folders.
 
 
-Copyright (C) 2016, Tomislav Karastojkovic (http://www.alepho.com).
+Copyright (C) 2025, Sylvain Guinebert (github.com/sguinebert).
 
 Distributed under the FreeBSD license, see the accompanying file LICENSE or
 copy at http://www.freebsd.org/copyright/freebsd-license.html.
@@ -14,53 +14,66 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 */
 
 
-#include <algorithm>
 #include <iostream>
-#include <string>
+#include <boost/asio.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/ssl.hpp>
+#include <boost/asio/use_awaitable.hpp>
 #include <mailio/imap/client.hpp>
+#include <mailio/net/tls_mode.hpp>
 
 
-using mailio::imap;
-using mailio::imap_error;
-using mailio::dialog_error;
-using std::for_each;
+using mailio::imap::client;
+using mailio::imap::error;
+using mailio::net::dialog_error;
 using std::cout;
 using std::endl;
-using std::string;
-
-
-void print_folders(unsigned tabs, const imap::mailbox_folder_t& folder)
-{
-    string indent(tabs, '\t');
-    for (auto& f : folder.folders)
-    {
-        cout << indent << f.first << endl;
-        if (!f.second.folders.empty())
-            print_folders(++tabs, f.second);
-    }
-}
 
 
 int main()
 {
-    try
-    {
-        imap conn("imap.mailserver.com", 993);
-        conn.start_tls(false);
-        // modify username/password to use real credentials
-        conn.authenticate("mailio@mailserver.com", "mailiopass", imap::auth_method_t::LOGIN);
-        imap::mailbox_folder_t fld = conn.list_folders("");
-        print_folders(0, fld);
-    }
-    catch (imap_error& exc)
-    {
-        cout << exc.what() << endl;
-    }
-    catch (dialog_error& exc)
-    {
-        cout << exc.what() << endl;
-    }
+    boost::asio::io_context io_ctx;
+    boost::asio::ssl::context ssl_ctx(boost::asio::ssl::context::tls_client);
 
+    boost::asio::co_spawn(io_ctx,
+        [&]() -> boost::asio::awaitable<void>
+        {
+            try
+            {
+                mailio::imap::options options;
+                options.tls.use_default_verify_paths = true;
+                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify_host = true;
+
+                client conn(io_ctx.get_executor(), options);
+                co_await conn.connect("imap.mailserver.com", "993",
+                    mailio::net::tls_mode::implicit, &ssl_ctx, "imap.mailserver.com");
+                co_await conn.read_greeting();
+                // modify username/password to use real credentials
+                co_await conn.login("mailio@mailserver.com", "mailiopass");
+
+                auto [list_resp, folders] = co_await conn.list("", "*");
+                (void)list_resp;
+                for (const auto& folder : folders)
+                {
+                    cout << folder.name << endl;
+                }
+
+                co_await conn.logout();
+            }
+            catch (const error& exc)
+            {
+                cout << exc.what() << endl;
+            }
+            catch (const dialog_error& exc)
+            {
+                cout << exc.what() << endl;
+            }
+            co_return;
+        },
+        boost::asio::detached);
+
+    io_ctx.run();
     return EXIT_SUCCESS;
 }
-

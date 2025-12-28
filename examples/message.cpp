@@ -7,7 +7,7 @@ Various encodings when dealing with the message.
 The example keeps code snippets in the various encodings. To see them properly, change the file encoding as marked in the snippet.
 
 
-Copyright (C) 2022, Tomislav Karastojkovic (http://www.alepho.com).
+Copyright (C) 2025, Sylvain Guinebert (github.com/sguinebert).
 
 Distributed under the FreeBSD license, see the accompanying file LICENSE or
 copy at http://www.freebsd.org/copyright/freebsd-license.html.
