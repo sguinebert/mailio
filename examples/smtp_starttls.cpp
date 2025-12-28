@@ -1,53 +1,50 @@
 #include <iostream>
-#include <mailio/smtp.hpp>
-#include <mailio/message.hpp>
 #include <boost/asio.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
 #include <boost/asio/ssl.hpp>
+#include <boost/asio/use_awaitable.hpp>
+#include <mailio/mime/message.hpp>
+#include <mailio/smtp/client.hpp>
 
-using boost::asio::ip::tcp;
-using namespace mailio;
+using mailio::message;
+using mailio::mail_address;
+using mailio::smtp::auth_method;
+using mailio::smtp::client;
+using mailio::smtp::error;
+using mailio::dialog_error;
 
 boost::asio::awaitable<void> send_email(boost::asio::io_context& io_ctx, boost::asio::ssl::context& ssl_ctx)
 {
     try
     {
-        // 1. Connect with plain TCP
-        tcp::resolver resolver(io_ctx);
-        auto endpoints = co_await resolver.async_resolve("smtp.gmail.com", "587", boost::asio::use_awaitable);
-        tcp::socket socket(io_ctx);
-        co_await boost::asio::async_connect(socket, endpoints, boost::asio::use_awaitable);
+        client conn(io_ctx.get_executor());
+        co_await conn.connect("smtp.gmail.com", "587");
+        co_await conn.read_greeting();
+        co_await conn.ehlo();
+        co_await conn.start_tls(ssl_ctx, "smtp.gmail.com");
+        co_await conn.ehlo();
 
-        // 2. Create client (moves socket)
-        smtp_client<tcp::socket> client(std::move(socket));
+        co_await conn.authenticate("user@gmail.com", "password", auth_method::login);
 
-        // 3. Read greeting and EHLO
-        co_await client.async_read_greeting(boost::asio::use_awaitable);
-        co_await client.async_ehlo(boost::asio::use_awaitable);
-
-        // 4. Upgrade to STARTTLS
-        // 'client' is moved-from after this call
-        auto secure_client = co_await client.starttls(ssl_ctx);
-
-        // 5. EHLO again (required after STARTTLS)
-        co_await secure_client.async_ehlo(boost::asio::use_awaitable);
-
-        // 6. Authenticate
-        co_await secure_client.async_authenticate("user@gmail.com", "password", smtp_base::auth_method_t::LOGIN, boost::asio::use_awaitable);
-
-        // 7. Send message
         message msg;
         msg.from(mail_address("Sender", "user@gmail.com"));
         msg.add_recipient(mail_address("Recipient", "recipient@example.com"));
         msg.subject("Test from mailio async");
         msg.content("Hello, World!");
 
-        co_await secure_client.async_submit(msg, boost::asio::use_awaitable);
+        co_await conn.send(msg);
+        co_await conn.quit();
 
         std::cout << "Email sent successfully!" << std::endl;
     }
-    catch (std::exception& e)
+    catch (error& exc)
     {
-        std::cerr << "Error: " << e.what() << std::endl;
+        std::cerr << "Error: " << exc.what() << std::endl;
+    }
+    catch (dialog_error& exc)
+    {
+        std::cerr << "Dialog error: " << exc.what() << std::endl;
     }
 }
 

@@ -15,7 +15,7 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 
 
 #include <iostream>
-#include <mailio/imap.hpp>
+#include <mailio/imap/client.hpp>
 
 
 using mailio::message;
@@ -50,3 +50,4 @@ int main()
 
     return EXIT_SUCCESS;
 }
+

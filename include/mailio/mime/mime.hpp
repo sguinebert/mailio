@@ -25,8 +25,8 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <map>
 #include <boost/regex.hpp>
 #include <boost/algorithm/string/case_conv.hpp>
-#include "codec.hpp"
-#include "export.hpp"
+#include <mailio/codec/codec.hpp>
+#include <mailio/export.hpp>
 
 
 namespace mailio
@@ -1046,3 +1046,4 @@ protected:
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+

@@ -20,8 +20,8 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 
 #include <string>
 #include <vector>
-#include "codec.hpp"
-#include "export.hpp"
+#include <mailio/codec/codec.hpp>
+#include <mailio/export.hpp>
 
 namespace mailio
 {
@@ -229,3 +229,4 @@ struct MAILIO_EXPORT mailboxes
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+

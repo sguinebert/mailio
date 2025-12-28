@@ -50,6 +50,7 @@ option(MAILIO_BUILD_DOCUMENTATION "Turn on to build doxygen based documentation.
 option(MAILIO_BUILD_EXAMPLES "Turn on to build examples." ON)
 option(MAILIO_BUILD_TESTS "Turn on to build the tests." ON)
 option(MAILIO_DYN_LINK_TESTS "Turn on to dynamically link the tests." OFF)
+option(MAILIO_BUILD_MODULES "Turn on to build C++20 modules (EXPERIMENTAL, requires CMake 3.28+)." OFF)
 
 option(BUILD_SHARED_LIBS "Turn on to build mailio as a shared library. When off mailio is build as a static library." ON)
 
@@ -74,21 +75,37 @@ set(project_sources
 )
 
 set(project_headers
-    ${PROJECT_SOURCE_DIR}/include/mailio/base64.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/binary.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/bit7.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/bit8.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/codec.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/dialog.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/export.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/mailio.hpp
     ${PROJECT_SOURCE_DIR}/include/mailio/imap.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/mailboxes.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/import.hpp
     ${PROJECT_SOURCE_DIR}/include/mailio/message.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/mime.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/percent.hpp
     ${PROJECT_SOURCE_DIR}/include/mailio/pop3.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/quoted_printable.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/q_codec.hpp
     ${PROJECT_SOURCE_DIR}/include/mailio/smtp.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/detail/append.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/detail/ascii.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/codec/base64.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/codec/binary.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/codec/bit7.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/codec/bit8.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/codec/codec.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/codec/percent.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/codec/q_codec.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/codec/quoted_printable.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/mime/mailboxes.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/mime/message.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/mime/mime.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/net/dialog.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/net/upgradable_stream.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/imap/client.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/imap/error.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/imap/types.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/pop3/client.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/pop3/error.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/pop3/types.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/smtp/client.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/smtp/error.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailio/smtp/types.hpp
 )
 
 # handle documentation
@@ -220,3 +237,12 @@ if(${MAILIO_BUILD_TESTS})
     file(GLOB TXTS "${PROJECT_SOURCE_DIR}/test/cv.txt")
     install(FILES ${TXTS} DESTINATION "${SHARE_INSTALL_DIR}/${PROJECT_NAME}/test/")
 endif(${MAILIO_BUILD_TESTS})
+
+# optionally build C++20 modules (EXPERIMENTAL)
+if(${MAILIO_BUILD_MODULES})
+    if(CMAKE_VERSION VERSION_LESS "3.28")
+        message(WARNING "C++20 modules require CMake 3.28+. Skipping modules build.")
+    else()
+        add_subdirectory(modules)
+    endif()
+endif(${MAILIO_BUILD_MODULES})

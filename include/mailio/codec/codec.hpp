@@ -23,7 +23,7 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <stdexcept>
 #include <algorithm>
 #include <boost/algorithm/string.hpp>
-#include "export.hpp"
+#include <mailio/export.hpp>
 
 
 namespace mailio
@@ -925,3 +925,4 @@ bool operator>=(const String<Buf, Char>& lhs, const std::u8string& rhs)
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+

@@ -16,8 +16,8 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 
 
 #include <iostream>
-#include <mailio/mailboxes.hpp>
-#include <mailio/message.hpp>
+#include <mailio/mime/mailboxes.hpp>
+#include <mailio/mime/message.hpp>
 
 
 using std::cout;
@@ -142,3 +142,4 @@ int main()
 
     return EXIT_SUCCESS;
 }
+

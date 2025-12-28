@@ -16,8 +16,8 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <string>
 #include <vector>
 #include <boost/algorithm/string/trim.hpp>
-#include "codec.hpp"
-#include "export.hpp"
+#include <mailio/codec/codec.hpp>
+#include <mailio/export.hpp>
 
 
 namespace mailio
@@ -169,3 +169,4 @@ private:
 
 
 } // namespace mailio
+

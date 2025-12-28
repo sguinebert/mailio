@@ -21,8 +21,8 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <tuple>
 #include <chrono>
 #include <boost/test/unit_test.hpp>
-#include <mailio/mailboxes.hpp>
-#include <mailio/message.hpp>
+#include <mailio/mime/mailboxes.hpp>
+#include <mailio/mime/message.hpp>
 
 
 using std::string;
@@ -6119,3 +6119,4 @@ BOOST_AUTO_TEST_CASE(object_copying)
         BOOST_CHECK(msg1_str == msg3_str);
     }
 }
+

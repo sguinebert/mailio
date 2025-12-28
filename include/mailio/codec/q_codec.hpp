@@ -22,10 +22,10 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <vector>
 #include <tuple>
 #include <boost/algorithm/string.hpp>
-#include "codec.hpp"
-#include "base64.hpp"
-#include "quoted_printable.hpp"
-#include "export.hpp"
+#include <mailio/codec/codec.hpp>
+#include <mailio/codec/base64.hpp>
+#include <mailio/codec/quoted_printable.hpp>
+#include <mailio/export.hpp>
 
 
 namespace mailio
@@ -254,3 +254,4 @@ private:
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+

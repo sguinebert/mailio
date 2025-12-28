@@ -19,8 +19,8 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <iostream>
 #include <string>
 #include <fstream>
-#include <mailio/message.hpp>
-#include <mailio/pop3.hpp>
+#include <mailio/mime/message.hpp>
+#include <mailio/pop3/client.hpp>
 
 
 using mailio::message;
@@ -71,3 +71,4 @@ int main()
 
     return EXIT_SUCCESS;
 }
+
