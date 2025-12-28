@@ -1,215 +1,487 @@
+# mailxx
 
-# mailio #
-
-![C++](https://img.shields.io/badge/C++-17-blue)
-![C++](https://img.shields.io/badge/C++-20-blue)
+![C++](https://img.shields.io/badge/C++-23-blue)
 [![License](https://img.shields.io/badge/License-MIT-darkgreen)](LICENSE)
-[![Conan Center](https://img.shields.io/conan/v/mailio)](https://conan.io/center/recipes/mailio)
-[![Vcpkg](https://img.shields.io/vcpkg/v/mailio)](https://vcpkg.io/en/package/mailio)
 ![FreeBSD](https://img.shields.io/badge/OS-FreeBSD-870000)
 ![Linux](https://img.shields.io/badge/OS-Linux-870000)
 ![Windows](https://img.shields.io/badge/OS-Windows-870000)
+![macOS](https://img.shields.io/badge/OS-macOS-870000)
 
-[中文文档](README_zh.md)
+**mailxx** is a modern, header-only C++23 library for email protocols (SMTP, IMAP, POP3) with full async/await support using coroutines.
 
-*mailio* is a cross platform C++ library for MIME format and SMTP, POP3 and IMAP protocols. It is based on the standard C++ 17 and Boost library.
+## ✨ Key Features
 
+- **Header-only**: No compilation required, just include and use
+- **Modern C++23**: Leverages coroutines, concepts, ranges, and std::expected
+- **Async/Await**: Native coroutine support with `co_await` for non-blocking I/O
+- **Connection Pooling**: Built-in connection pool with automatic reconnection
+- **Rate Limiting**: Token bucket algorithm for API rate limiting
+- **Flexible Asio**: Works with both Boost.Asio and standalone Asio
 
-# Examples #
+## 📧 Protocol Support
 
-To send a mail, one has to create `message` object and set it's attributes as author, recipient, subject and so on. Then, an SMTP connection
-is created by constructing `smtp` (~~or smtps~~) class. The message is sent over the connection:
+| Protocol | Coverage | Key Features |
+|----------|----------|--------------|
+| **SMTP** | 100% | PIPELINING, SIZE, 8BITMIME, SMTPUTF8, DSN, AUTH (LOGIN, PLAIN, CRAM-MD5) |
+| **IMAP** | 98% | IDLE, NAMESPACE, QUOTA, SORT/THREAD, SEARCH, Folder management |
+| **POP3** | 95% | UIDL, TOP, STAT, LIST, Authentication |
+
+## 🚀 Quick Start
+
+### Installation
+
+**Header-only** - Just copy the `include/mailxx` directory to your project, or:
+
+```bash
+# Clone the repository
+git clone https://github.com/sguinebert/mailxx.git
+
+# Or use CMake FetchContent
+```
+
+### Requirements
+
+- C++23 compatible compiler (GCC 13+, Clang 16+, MSVC 2022+)
+- Boost 1.81+ (Asio, Beast, SSL) or standalone Asio
+- OpenSSL
+
+### Send an Email
+
+mailxx supports multiple async patterns. Choose what fits your project:
+
+#### 🔹 Coroutines (C++20/23)
 
 ```cpp
-message msg;
-msg.from(mail_address("mailio library", "mailio@gmail.com"));
-msg.add_recipient(mail_address("mailio library", "mailio@gmail.com"));
-msg.subject("smtp simple message");
-msg.content("Hello, World!");
+#include <mailxx/mailxx.hpp>
 
-smtp conn("smtp.gmail.com", 587);
-conn.authenticate("mailio@gmail.com", "mailiopass", smtp::auth_method_t::LOGIN);
-conn.submit(msg);
+mailxx::task<void> send_email() {
+    mailxx::asio::io_context io;
+    mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
+
+    co_await smtp.async_connect();
+    co_await smtp.async_starttls();
+    co_await smtp.async_authenticate("user@gmail.com", "app-password", 
+                                      mailxx::smtp::auth_method::login);
+
+    mailxx::mime::message msg;
+    msg.from({"Sender Name", "sender@gmail.com"});
+    msg.add_recipient({"Recipient", "recipient@example.com"});
+    msg.subject("Hello from mailxx!");
+    msg.content("This is a test email sent with mailxx.");
+
+    co_await smtp.async_send(msg);
+    co_await smtp.async_quit();
+}
 ```
 
-To receive a mail, a `message` object is created to store the received message. Mail can be received over POP3 or IMAP, depending of mail server setup.
-If POP3 is used, then instance of `pop3` (~~or pop3s~~) class is created and message is fetched:
+#### 🔹 Callbacks (Traditional Async)
 
 ```cpp
-pop3 conn("pop.mail.yahoo.com", 110);
-conn.authenticate("mailio@yahoo.com", "mailiopass", pop3::auth_method_t::LOGIN);
-message msg;
-conn.fetch(1, msg);
+#include <mailxx/mailxx.hpp>
+
+mailxx::asio::io_context io;
+mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
+
+smtp.async_connect([&](mailxx::error_code ec) {
+    if (ec) { std::cerr << "Connect failed: " << ec.message() << "\n"; return; }
+    
+    smtp.async_starttls([&](mailxx::error_code ec) {
+        if (ec) { std::cerr << "STARTTLS failed: " << ec.message() << "\n"; return; }
+        
+        smtp.async_authenticate("user@gmail.com", "app-password",
+                                 mailxx::smtp::auth_method::login,
+                                 [&](mailxx::error_code ec) {
+            if (ec) { std::cerr << "Auth failed: " << ec.message() << "\n"; return; }
+            
+            mailxx::mime::message msg;
+            msg.from({"Sender", "sender@gmail.com"});
+            msg.add_recipient({"Recipient", "recipient@example.com"});
+            msg.subject("Hello from mailxx!");
+            msg.content("Callback style!");
+            
+            smtp.async_send(msg, [&](mailxx::error_code ec) {
+                if (!ec) std::cout << "Email sent!\n";
+                smtp.async_quit([](auto) {});
+            });
+        });
+    });
+});
+
+io.run();
 ```
 
-Receiving a message over IMAP is analogous. Since IMAP recognizes folders, then one has to be specified, like *inbox*:
+#### 🔹 Futures (std::future)
 
 ```cpp
-imap conn("imap.gmail.com", 143);
-conn.authenticate("mailio@gmail.com", "mailiopass", imap::auth_method_t::LOGIN);
-message msg;
-conn.fetch("inbox", 1, msg);
+#include <mailxx/mailxx.hpp>
+
+mailxx::asio::io_context io;
+mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
+
+// Use mailxx::use_future token
+std::future<void> fut = smtp.async_connect(mailxx::use_future);
+
+std::thread io_thread([&]() { io.run(); });
+
+fut.get();  // Wait for connection
+
+auto auth_fut = smtp.async_authenticate("user@gmail.com", "app-password",
+                                         mailxx::smtp::auth_method::login,
+                                         mailxx::use_future);
+auth_fut.get();
+
+mailxx::mime::message msg;
+// ... setup message ...
+
+smtp.async_send(msg, mailxx::use_future).get();
+smtp.async_quit(mailxx::use_future).get();
+
+io_thread.join();
 ```
 
-More advanced features are shown in `examples` directory, see below how to compile them.
+#### 🔹 Synchronous (Blocking)
 
-Note for Gmail users: it might be needed to [register](https://support.google.com/accounts/answer/6010255) *mailio* as a trusted application. Follow the
-[Gmail instructions](https://support.google.com/accounts/answer/3466521) to add it and use the generated password for all three protocols.
+```cpp
+#include <mailxx/mailxx.hpp>
 
-Note for Zoho users: if 2FA is turned on, then instead of the primary password, the application password must be used. Follow
-[Zoho instructions](https://www.zoho.com/mail/help/adminconsole/two-factor-authentication.html#alink5) to add *mailio* as trusted application and use the
-generated password for all three protocols.
+mailxx::asio::io_context io;
+mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
 
+// Simple blocking calls
+smtp.connect();
+smtp.starttls();
+smtp.authenticate("user@gmail.com", "app-password", 
+                   mailxx::smtp::auth_method::login);
 
-# Setup #
+mailxx::mime::message msg;
+msg.from({"Sender Name", "sender@gmail.com"});
+msg.add_recipient({"Recipient", "recipient@example.com"});
+msg.subject("Hello from mailxx!");
+msg.content("Synchronous style - simple and straightforward.");
 
-*mailio* library is supposed to work on all platforms supporting C++ 17 compiler, Boost 1.81 or newer and CMake build tool. The platforms tested so far are
-Linux, Windows, FreeBSD, MacOS, Cygwin, MinGW and the compilers are Gcc, Microsoft Visual C++ and Clang.
-
-There are several ways to build *mailio*: by cloning the [repo](https://github.com/karastojko/mailio.git) and using Cmake, by using Vcpkg or
-[xmake](https://xmake.io).
-
-
-## CMake ##
-
-Ensure that OpenSSL, Boost and CMake are in the path. If they are not in the path, one could use CMake options `-DOPENSSL_ROOT_DIR`, `-DBOOST_ROOT` and
-`Boost_INCLUDE_DIRS` to set them. Boost must be built with the OpenSSL support. If it cannot be found in the path, set the path explicitly via `library-path`
-and `include` parameters of `b2` script (after `bootstrap` finishes). Both static and dynamic libraries should be built in the `build` directory.
-
-If one wants to specify a non-default installation directory, say `/opt/mailio`, then the option `-DCMAKE_INSTALL_PREFIX` should be used. If a user does not have
-privileges for the default directories, then it must specify one by using this CMake variable.
-
-Other available options are `BUILD_SHARED_LIBS` (whether a shared or static library shall be built, by default a shared lib is built),
-`MAILIO_BUILD_DOCUMENTATION` (if Doxygen documentation is generated, by default is on) and `MAILIO_BUILD_EXAMPLES` (if examples are built, by default is on).
-
-
-### Linux, FreeBSD, MacOS, Cygwin ###
-
-From the terminal go into the directory where the library is downloaded to, and execute:
-```
-mkdir build
-cd ./build
-cmake ..
-make install
-```
-Installing the project ensures that the test project has also the auxiliary files copied, required by several tests.
-
-
-### Microsoft Windows/Visual Studio ###
-
-From the command prompt go into the directory where the library is downloaded, and execute:
-```
-mkdir build
-cd .\build
-cmake ..
-```
-A solution file will be built, open it from Visual Studio and build the project. To install it, build the `INSTALL` project of the *mailio* solution, it copies
-also auxiliary files required by several tests.
-
-
-### Microsoft Windows/MinGW ###
-
-Open the command prompt by using the `open_distro_window.bat` script, and execute:
-```
-mkdir build
-cd .\build
-cmake.exe .. -G "MinGW Makefiles"
-make install
+smtp.send(msg);
+smtp.quit();
 ```
 
+### Receive Emails (IMAP)
 
-## Vcpkg ##
+#### Coroutines
 
-Install [Vcpkg](https://github.com/microsoft/vcpkg) and run:
+```cpp
+#include <mailxx/mailxx.hpp>
+
+mailxx::task<void> fetch_emails() {
+    mailxx::asio::io_context io;
+    mailxx::imap::client imap(io, "imap.gmail.com", 993);
+
+    co_await imap.async_connect_ssl();
+    co_await imap.async_authenticate("user@gmail.com", "app-password",
+                                      mailxx::imap::auth_method::login);
+
+    co_await imap.async_select("INBOX");
+
+    // Fetch message
+    auto msg = co_await imap.async_fetch(1);
+    std::cout << "Subject: " << msg.subject() << "\n";
+    std::cout << "From: " << msg.from().name << "\n";
+
+    co_await imap.async_logout();
+}
 ```
-vcpkg install mailio
+
+#### Callbacks with Progress
+
+```cpp
+mailxx::imap::client imap(io, "imap.gmail.com", 993);
+
+imap.async_connect_ssl([&](mailxx::error_code ec) {
+    if (ec) return;
+    
+    imap.async_authenticate("user@gmail.com", "app-password",
+                             mailxx::imap::auth_method::login,
+                             [&](mailxx::error_code ec) {
+        if (ec) return;
+        
+        imap.async_select("INBOX", [&](mailxx::error_code ec, 
+                                        const mailxx::imap::mailbox_info& info) {
+            std::cout << "Messages: " << info.exists << "\n";
+            std::cout << "Unseen: " << info.unseen << "\n";
+            
+            // Fetch with progress callback
+            mailxx::imap::fetch_options opts;
+            opts.on_progress = [](size_t bytes, size_t total) {
+                std::cout << "Progress: " << (bytes * 100 / total) << "%\n";
+            };
+            
+            imap.async_fetch(1, opts, [&](mailxx::error_code ec, 
+                                           mailxx::mime::message msg) {
+                if (!ec) {
+                    std::cout << "Subject: " << msg.subject() << "\n";
+                }
+            });
+        });
+    });
+});
 ```
-Tests are not available as an option in this case. Use the CMake way to build them.
 
+### IMAP IDLE (Push Notifications)
 
-# Features #
+```cpp
+// Coroutine style
+auto result = co_await imap.async_idle(std::chrono::minutes(29));
 
-* Recursive formatter and parser of the MIME message.
-* MIME message recognizes the most common headers like subject, recipients, content type and so on.
-* Message body encodings that are supported: Seven bit, Eight bit, Binary, Base64 and Quoted Printable.
-* Header encodings that are supported: ASCII, UTF-8, Base64, Quoted Printable.
-* Header attributes encodings that are supported: ASCII, Base64, Quoted Printable, Percent.
-* String charset configurable for headers and their attributes.
-* All media types are recognized, including MIME message embedded within another message.
-* MIME message has configurable line length policy and strict mode for parsing.
-* SMTP implementation with message sending. Both plain and SSL (including START TLS) versions are available.
-* POP3 implementation with message receiving and removal, getting mailbox statistics. Both plain and SSL (including START TLS) versions are available.
-* IMAP implementation with message receiving, removal and search, getting mailbox statistics, managing folders. Both plain and SSL (including START TLS)
-  versions are available.
+if (result == mailxx::imap::idle_result::new_mail) {
+    std::cout << "New message arrived!\n";
+}
 
+// Callback style with event handler
+imap.async_idle(std::chrono::minutes(29), 
+    [](mailxx::error_code ec, mailxx::imap::idle_result result) {
+        if (result == mailxx::imap::idle_result::new_mail) {
+            std::cout << "New message arrived!\n";
+        }
+    });
+```
 
-# Issues and improvements #
+### Connection Pooling
 
-The library is tested on valid mail servers, so probably there are negative test scenarios that are not covered by the code. In case you find one, please
-contact me. Here is a list of issues known so far and planned to be fixed in the future.
+```cpp
+#include <mailxx/pool/smtp_pool.hpp>
 
-* MIME header attributes not fully implemented.
-* IMAP supports only ASCII folder names.
-* IMAP lacks the idle support.
-* Editing parts of a message.
-* IMAP flags.
-* Asynchronous I/O.
-* External initialization of the SSL context.
-* IMAP copy command.
+mailxx::pool::pool_config config{
+    .min_connections = 2,
+    .max_connections = 10,
+    .connection_timeout = std::chrono::seconds(30),
+    .idle_timeout = std::chrono::minutes(5)
+};
 
+mailxx::pool::smtp_pool pool(io, "smtp.example.com", 587, config);
 
-# Contributors #
+// Coroutine style
+auto conn = co_await pool.async_acquire();
+co_await conn->async_send(message);
+// Connection automatically returned to pool
 
-Thanks to all people who contribute to the project by improving the source code, report problems and propose new features. Here is a list from the Git history,
-in case I missed someone please let me know.
+// Callback style
+pool.async_acquire([&](mailxx::error_code ec, 
+                        mailxx::pool::connection_handle conn) {
+    if (ec) return;
+    
+    conn->async_send(message, [conn](mailxx::error_code ec) {
+        // conn automatically returned when handle is destroyed
+        if (!ec) std::cout << "Sent via pooled connection\n";
+    });
+});
+```
 
-* [Trevor Mellon](https://github.com/TrevorMellon): CMake build scripts.
-* [Kira Backes](mailto:kira.backes[at]nrwsoft.de): Fix for correct default message date.
-* [sledgehammer_999](mailto:hammered999[at]gmail.com): Replacement of Boost random function with the standard one.
-* [Paul Tsouchlos](mailto:developer.paul.123[at]gmail.com): Modernizing build scripts.
-* [Anton Zhvakin](mailto:a.zhvakin[at]galament.com): Replacement of deprecated Boost Asio entities.
-* [terminator356](mailto:termtech[at]rogers.com): IMAP searching, fetching messages by UIDs.
-* [Ilya Tsybulsky](mailto:ilya.tsybulsky[at]gmail.com): MIME parsing and formatting issues. UIDL command for POP3.
-* [Ayaz Salikhov](https://github.com/mathbunnyru): Conan packaging.
-* [Tim Lukas Harken](tlh[at]tlharken.de): Removing compilation warnings.
-* [Rainer Sabelka](mailto:saba[at]sabanet.at]): SMTP server response on accepting a mail.
-* [David Garcia](mailto:david.garcia[at]antiteum.com): Vcpkg port.
-* [ImJustStokedToBeHere](https://github.com/ImJustStokedToBeHere): Typo error in IMAP.
-* [lifof](mailto:youssef.beddad[at]gmail.com): Support for the MinGW compilation.
-* [Canyon E](https://github.com/canyone2015): IMAP folder delimiter static variable issue.
-* [ostermal](https://github.com/ostermal): Bug with the horizontal tab in MIME headers.
-* [MRsoymilk](mailto:313958485[at]qq.com): Bug in the sending attachment example.
-* [Don Yihtseu](https://github.com/tsurumi-yizhou): Add Chinese ReadMe.
-* [Leonhard Kipp](mailto:Leonhard.Kipp[at]ppro.com): Proper way to build the shared library. Message formatting options. Optional message subject.
-* [Orchistro](https://github.com/orchistro): Improving CMake build script.
-* [Abril Rincón Blanco](mailto:git[at]rinconblanco.es): Compilation fix for Clang earlier than the version 14.
-* [yjm6560](https://github.com/yjm6560): Various IMAP bugs.
-* [Hannah Sauermann](mailto:hannah.sauermann[at]seclous.com): Fix for the `stringstream` usage in older standard libraries.
-* [Matheus Gabriel Werny](mailto:matheusgwdl[at]protonmail.com): CMake fixes and improvements.
-* [stitch3210](https://github.com/stitch3210): Case insensitive headers.
-* [Luigi Masdea](luigimasdea0[at]gmail.com): Typo error.
-* [Charlie Wolf](charlie[at]wolf.is): Additional attributes in the content type.
-* [Mateusz Golebiewski](https://github.com/ubinoob1): Fix for EHLO not being sent after STARTTLS.
+### Rate Limiting
 
+```cpp
+#include <mailxx/pool/rate_limiter.hpp>
 
-# References #
+// 100 emails per hour
+mailxx::pool::rate_limiter limiter(100, std::chrono::hours(1));
 
-* [RFC 822](http://www.rfc-editor.org/rfc/rfc822): Standard for the Format of ARPA Internet Text Messages.
-* [RFC 1939](http://www.rfc-editor.org/rfc/rfc1939): Post Office Protocol - Version 3
-* [RFC 2045](http://www.rfc-editor.org/rfc/rfc2045): Multipurpose Internet Mail Extensions (MIME) Part One: Format of Internet Message Bodies
-* [RFC 2046](http://www.rfc-editor.org/rfc/rfc2046): Multipurpose Internet Mail Extensions (MIME) Part Two: Media Types
-* [RFC 2047](http://www.rfc-editor.org/rfc/rfc2047): MIME (Multipurpose Internet Mail Extensions) Part Three: Message Header Extensions for Non-ASCII Text
-* [RFC 2177](http://www.rfc-editor.org/rfc/rfc2177): IMAP4 IDLE command
-* [RFC 2183](http://www.rfc-editor.org/rfc/rfc2183): Communicating Presentation Information in Internet Messages: The Content-Disposition Header Field
-* [RFC 2231](http://www.rfc-editor.org/rfc/rfc2231): MIME Parameter Value and Encoded Word Extensions: Sets, Languages, and Continuations
-* [RFC 2449](http://www.rfc-editor.org/rfc/rfc2449): Extension Mechanism
-* [RFC 3501](http://www.rfc-editor.org/rfc/rfc3501): Message Access Protocol - Version 4rev1
-* [RFC 5321](http://www.rfc-editor.org/rfc/rfc5321): Simple Mail Transfer Protocol
-* [RFC 5322](http://www.rfc-editor.org/rfc/rfc5322): Internet Message Format
-* [RFC 5987](http://www.rfc-editor.org/rfc/rfc5987): Character Set and Language Encoding for Hypertext Transfer Protocol (HTTP) Header Field Parameters
-* [RFC 6532](http://www.rfc-editor.org/rfc/rfc6532): Internationalized Email Headers
+// Coroutine style
+for (const auto& msg : messages) {
+    co_await limiter.async_acquire();  // Wait if rate limit exceeded
+    co_await smtp.async_send(msg);
+}
 
+// Callback style  
+void send_next(size_t index) {
+    if (index >= messages.size()) return;
+    
+    limiter.async_acquire([&, index](mailxx::error_code ec) {
+        smtp.async_send(messages[index], [&, index](mailxx::error_code ec) {
+            send_next(index + 1);  // Chain next send
+        });
+    });
+}
+send_next(0);
 
-# Contact #
+// Synchronous check (non-blocking)
+if (limiter.try_acquire()) {
+    smtp.send(msg);
+} else {
+    std::cout << "Rate limit exceeded, retry in " 
+              << limiter.time_until_available().count() << "ms\n";
+}
+```
 
-In case you find a bug, please drop me a mail to contact (at) alepho.com. Since this is my side project, I'll do my best to be responsive.
+### Delivery Status Notification (DSN)
+
+```cpp
+mailxx::smtp::dsn_options dsn{
+    .notify = mailxx::smtp::dsn_notify::success | 
+              mailxx::smtp::dsn_notify::failure,
+    .return_type = mailxx::smtp::dsn_return::headers,
+    .envid = "unique-envelope-id"
+};
+
+// Coroutine
+co_await smtp.async_send(msg, dsn);
+
+// Callback
+smtp.async_send(msg, dsn, [](mailxx::error_code ec) {
+    if (!ec) std::cout << "Sent with DSN request\n";
+});
+
+// Synchronous
+smtp.send(msg, dsn);
+```
+
+## 🔄 Completion Token Patterns
+
+mailxx follows the Asio completion token pattern, supporting:
+
+| Pattern | Token | Use Case |
+|---------|-------|----------|
+| Callbacks | `[](error_code, result) {}` | Traditional async, fine-grained control |
+| Coroutines | `mailxx::use_awaitable` | Modern C++20/23, clean sequential code |
+| Futures | `mailxx::use_future` | Integration with std::future workflows |
+| Deferred | `mailxx::deferred` | Lazy execution, composable operations |
+| Synchronous | *(no token)* | Simple blocking calls |
+
+```cpp
+// All these are equivalent ways to connect:
+smtp.connect();                                         // Sync
+smtp.async_connect([](auto ec) { /* ... */ });         // Callback
+co_await smtp.async_connect(mailxx::use_awaitable);    // Coroutine
+smtp.async_connect(mailxx::use_future).get();          // Future
+auto op = smtp.async_connect(mailxx::deferred);        // Deferred
+std::move(op)(handler);                                // Execute later
+```
+
+## 📁 Project Structure
+
+```
+mailxx/
+├── include/mailxx/
+│   ├── mailxx.hpp          # Main header (includes all)
+│   ├── codec/              # Base64, Quoted-Printable, etc.
+│   ├── mime/               # MIME message handling
+│   ├── smtp/               # SMTP client
+│   ├── imap/               # IMAP client  
+│   ├── pop3/               # POP3 client
+│   ├── pool/               # Connection pooling & rate limiting
+│   ├── net/                # Network abstractions
+│   └── detail/             # Internal implementation
+├── examples/               # Usage examples
+├── test/                   # Unit tests
+└── modules/                # C++20 modules (experimental)
+```
+
+## 🔧 CMake Integration
+
+```cmake
+# Option 1: FetchContent
+include(FetchContent)
+FetchContent_Declare(
+    mailxx
+    GIT_REPOSITORY https://github.com/sguinebert/mailxx.git
+    GIT_TAG main
+)
+FetchContent_MakeAvailable(mailxx)
+
+target_link_libraries(your_target PRIVATE mailxx::mailxx)
+
+# Option 2: find_package (after installation)
+find_package(mailxx REQUIRED)
+target_link_libraries(your_target PRIVATE mailxx::mailxx)
+```
+
+## 📦 C++20 Modules (Experimental)
+
+mailxx provides experimental C++20 module support for faster compilation and better encapsulation:
+
+```
+modules/
+├── mailxx.cppm          # Primary module interface
+├── mailxx.codec.cppm    # Base64, Quoted-Printable, etc.
+├── mailxx.mime.cppm     # MIME message handling
+├── mailxx.smtp.cppm     # SMTP client
+├── mailxx.imap.cppm     # IMAP client
+├── mailxx.pop3.cppm     # POP3 client
+└── mailxx.net.cppm      # Network abstractions
+```
+
+### Usage with Modules
+
+```cpp
+import mailxx;           // Import everything
+// or selectively:
+import mailxx.smtp;      // Only SMTP
+import mailxx.mime;      // Only MIME
+
+int main() {
+    mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
+    // ...
+}
+```
+
+### CMake with Modules
+
+```cmake
+# Requires CMake 3.28+ and a compatible compiler
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+
+add_executable(my_app main.cpp)
+target_sources(my_app
+    PUBLIC FILE_SET CXX_MODULES FILES
+        ${mailxx_SOURCE_DIR}/modules/mailxx.cppm
+        ${mailxx_SOURCE_DIR}/modules/mailxx.smtp.cppm
+        # ... other modules as needed
+)
+```
+
+### Compiler Support
+
+| Compiler | Module Support | Notes |
+|----------|----------------|-------|
+| **MSVC 2022** | ✅ Full | Best support currently |
+| **GCC 14+** | ✅ Good | Requires `-fmodules-ts` |
+| **Clang 17+** | ⚠️ Partial | Improving rapidly |
+
+> **Note**: C++20 modules are still evolving. For production use, the traditional header-only approach is recommended until module tooling matures.
+
+## 🔐 Security Notes
+
+- **Never hardcode passwords** - Use environment variables or secure vaults
+- **Use App Passwords** for Gmail/Outlook when 2FA is enabled
+- **Prefer TLS/SSL** connections (port 465/993/995 or STARTTLS on 587/143/110)
+
+## 📋 Supported RFCs
+
+| RFC | Description |
+|-----|-------------|
+| [RFC 5321](https://tools.ietf.org/html/rfc5321) | SMTP Protocol |
+| [RFC 5322](https://tools.ietf.org/html/rfc5322) | Internet Message Format |
+| [RFC 3501](https://tools.ietf.org/html/rfc3501) | IMAP4rev1 |
+| [RFC 1939](https://tools.ietf.org/html/rfc1939) | POP3 Protocol |
+| [RFC 2045-2049](https://tools.ietf.org/html/rfc2045) | MIME |
+| [RFC 2177](https://tools.ietf.org/html/rfc2177) | IMAP IDLE |
+| [RFC 2087](https://tools.ietf.org/html/rfc2087) | IMAP QUOTA |
+| [RFC 2342](https://tools.ietf.org/html/rfc2342) | IMAP NAMESPACE |
+| [RFC 5256](https://tools.ietf.org/html/rfc5256) | IMAP SORT/THREAD |
+| [RFC 2920](https://tools.ietf.org/html/rfc2920) | SMTP PIPELINING |
+| [RFC 1870](https://tools.ietf.org/html/rfc1870) | SMTP SIZE |
+| [RFC 6152](https://tools.ietf.org/html/rfc6152) | SMTP 8BITMIME |
+| [RFC 6531](https://tools.ietf.org/html/rfc6531) | SMTP SMTPUTF8 |
+| [RFC 3461](https://tools.ietf.org/html/rfc3461) | SMTP DSN |
+
+## 📄 License
+
+MIT License - Copyright (c) 2025 Sylvain Guinebert
+
+## 🙏 Acknowledgments
+
+This project was originally inspired by [mailio](https://github.com/karastojko/mailio) by Tomislav Karastojković. 
+mailxx has since evolved into a completely redesigned modern C++23 library with async/coroutine support, 
+header-only architecture, and extensive new features.
+
+## 📬 Contact
+
+- **Issues**: [GitHub Issues](https://github.com/sguinebert/mailxx/issues)
+- **Author**: Sylvain Guinebert

@@ -21,17 +21,17 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <boost/asio/detached.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
-#include <mailio/mime/message.hpp>
-#include <mailio/net/tls_mode.hpp>
-#include <mailio/smtp/client.hpp>
+#include <mailxx/mime/message.hpp>
+#include <mailxx/net/tls_mode.hpp>
+#include <mailxx/smtp/client.hpp>
 
 
-using mailio::message;
-using mailio::mail_address;
-using mailio::smtp::auth_method;
-using mailio::smtp::client;
-using mailio::smtp::error;
-using mailio::net::dialog_error;
+using mailxx::message;
+using mailxx::mail_address;
+using mailxx::smtp::auth_method;
+using mailxx::smtp::client;
+using mailxx::smtp::error;
+using mailxx::net::dialog_error;
 using std::cout;
 using std::endl;
 
@@ -52,14 +52,14 @@ int main()
                 msg.subject("local dev smtp");
                 msg.content("Hello from local dev.");
 
-                mailio::smtp::options options;
+                mailxx::smtp::options options;
                 options.allow_cleartext_auth = true; // DEV ONLY: allow auth without TLS.
-                options.tls.verify = mailio::net::verify_mode::none; // DEV ONLY: disable cert checks.
+                options.tls.verify = mailxx::net::verify_mode::none; // DEV ONLY: disable cert checks.
                 options.auto_starttls = true;
 
                 client conn(io_ctx.get_executor(), options);
                 co_await conn.connect("localhost", "587",
-                    mailio::net::tls_mode::starttls, &ssl_ctx, "localhost");
+                    mailxx::net::tls_mode::starttls, &ssl_ctx, "localhost");
 
                 // modify username/password to use real credentials if needed
                 co_await conn.authenticate("user", "pass", auth_method::login);

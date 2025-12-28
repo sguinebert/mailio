@@ -20,13 +20,13 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <boost/asio/detached.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
-#include <mailio/net/tls_mode.hpp>
-#include <mailio/pop3/client.hpp>
+#include <mailxx/net/tls_mode.hpp>
+#include <mailxx/pop3/client.hpp>
 
 
-using mailio::pop3::client;
-using mailio::pop3::error;
-using mailio::net::dialog_error;
+using mailxx::pop3::client;
+using mailxx::pop3::error;
+using mailxx::net::dialog_error;
 using std::cout;
 using std::endl;
 
@@ -41,17 +41,17 @@ int main()
         {
             try
             {
-                mailio::pop3::options options;
+                mailxx::pop3::options options;
                 options.tls.use_default_verify_paths = true;
-                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify = mailxx::net::verify_mode::peer;
                 options.tls.verify_host = true;
 
                 client conn(io_ctx.get_executor(), options);
                 co_await conn.connect("pop.mailserver.com", "995",
-                    mailio::net::tls_mode::implicit, &ssl_ctx, "pop.mailserver.com");
+                    mailxx::net::tls_mode::implicit, &ssl_ctx, "pop.mailserver.com");
                 co_await conn.read_greeting();
                 // modify to use real account
-                co_await conn.login("mailio@mailserver.com", "mailiopass");
+                co_await conn.login("mailxx@mailserver.com", "mailxxpass");
                 // remove first message from mailbox
                 co_await conn.dele(1);
                 co_await conn.quit();

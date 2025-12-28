@@ -20,17 +20,17 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <boost/asio/detached.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
-#include <mailio/mime/message.hpp>
-#include <mailio/net/tls_mode.hpp>
-#include <mailio/smtp/client.hpp>
+#include <mailxx/mime/message.hpp>
+#include <mailxx/net/tls_mode.hpp>
+#include <mailxx/smtp/client.hpp>
 
 
-using mailio::message;
-using mailio::mail_address;
-using mailio::smtp::auth_method;
-using mailio::smtp::client;
-using mailio::smtp::error;
-using mailio::net::dialog_error;
+using mailxx::message;
+using mailxx::mail_address;
+using mailxx::smtp::auth_method;
+using mailxx::smtp::client;
+using mailxx::smtp::error;
+using mailxx::net::dialog_error;
 using std::cout;
 using std::endl;
 
@@ -47,24 +47,24 @@ int main()
             {
                 // create mail message
                 message msg;
-                msg.from(mail_address("mailio library", "mailio@gmail.com"));// set the correct sender name and address
-                msg.add_recipient(mail_address("mailio library", "mailio@gmail.com"));// set the correct recipent name and address
+                msg.from(mail_address("mailxx library", "mailxx@gmail.com"));// set the correct sender name and address
+                msg.add_recipient(mail_address("mailxx library", "mailxx@gmail.com"));// set the correct recipent name and address
                 msg.subject("smtps simple message");
                 msg.content("Hello, World!");
 
                 // connect to server
-                mailio::smtp::options options;
+                mailxx::smtp::options options;
                 options.tls.use_default_verify_paths = true;
-                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify = mailxx::net::verify_mode::peer;
                 options.tls.verify_host = true;
                 options.auto_starttls = true;
 
                 client conn(io_ctx.get_executor(), options);
                 co_await conn.connect("smtp.gmail.com", "587",
-                    mailio::net::tls_mode::starttls, &ssl_ctx, "smtp.gmail.com");
+                    mailxx::net::tls_mode::starttls, &ssl_ctx, "smtp.gmail.com");
 
                 // modify username/password to use real credentials
-                co_await conn.authenticate("mailio@gmail.com", "mailiopass", auth_method::login);
+                co_await conn.authenticate("mailxx@gmail.com", "mailxxpass", auth_method::login);
                 co_await conn.send(msg);
                 co_await conn.quit();
             }

@@ -14,15 +14,15 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #define BOOST_TEST_MODULE tls_options_normalize_test
 
 #include <boost/test/unit_test.hpp>
-#include <mailio/net/tls_options.hpp>
+#include <mailxx/net/tls_options.hpp>
 
 
 BOOST_AUTO_TEST_CASE(normalize_hex_fingerprint)
 {
-    BOOST_TEST(mailio::net::normalize_fingerprint("AA:bb:cc") == "aabbcc");
+    BOOST_TEST(mailxx::net::normalize_fingerprint("AA:bb:cc") == "aabbcc");
 }
 
 BOOST_AUTO_TEST_CASE(normalize_base64_fingerprint)
 {
-    BOOST_TEST(mailio::net::normalize_fingerprint("YWJjYQ") == "YWJjYQ==");
+    BOOST_TEST(mailxx::net::normalize_fingerprint("YWJjYQ") == "YWJjYQ==");
 }

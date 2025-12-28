@@ -1,6 +1,6 @@
-cmake_minimum_required (VERSION 3.16.3)
+cmake_minimum_required (VERSION 3.28)
 
-project(mailio VERSION 0.26.0)
+project(mailxx VERSION 1.0.0)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -45,18 +45,18 @@ if(NOT SHARE_INSTALL_DIR)
   endif(CMAKE_INSTALL_DATADIR)
 endif(NOT SHARE_INSTALL_DIR)
 
-# options for mailio to control how the project is built.
-option(MAILIO_BUILD_DOCUMENTATION "Turn on to build doxygen based documentation." ON)
-option(MAILIO_BUILD_EXAMPLES "Turn on to build examples." ON)
-option(MAILIO_BUILD_TESTS "Turn on to build the tests." ON)
-option(MAILIO_DYN_LINK_TESTS "Turn on to dynamically link the tests." OFF)
-option(MAILIO_BUILD_MODULES "Turn on to build C++20 modules (EXPERIMENTAL, requires CMake 3.28+)." OFF)
+# options for mailxx to control how the project is built.
+option(mailxx_BUILD_DOCUMENTATION "Turn on to build doxygen based documentation." ON)
+option(mailxx_BUILD_EXAMPLES "Turn on to build examples." ON)
+option(mailxx_BUILD_TESTS "Turn on to build the tests." ON)
+option(mailxx_DYN_LINK_TESTS "Turn on to dynamically link the tests." OFF)
+option(mailxx_BUILD_MODULES "Turn on to build C++20 modules (EXPERIMENTAL, requires CMake 3.28+)." OFF)
 
-option(BUILD_SHARED_LIBS "Turn on to build mailio as a shared library. When off mailio is build as a static library." ON)
+option(BUILD_SHARED_LIBS "Turn on to build mailxx as a shared library. When off mailxx is build as a static library." ON)
 
 # add a dependent option to build latex documentation or not.
 include(CMakeDependentOption)
-cmake_dependent_option(MAILIO_BUILD_LATEX_DOCUMENTATION "Build latex docs" ON "MAILIO_BUILD_DOCUMENTATION" ON)
+cmake_dependent_option(mailxx_BUILD_LATEX_DOCUMENTATION "Build latex docs" ON "mailxx_BUILD_DOCUMENTATION" ON)
 
 if(WIN32)
     set(Boost_USE_STATIC_LIBS ON)
@@ -75,53 +75,53 @@ set(project_sources
 )
 
 set(project_headers
-    ${PROJECT_SOURCE_DIR}/include/mailio/export.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/mailio.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/imap.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/import.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/message.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/pop3.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/smtp.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/detail/append.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/detail/async_mutex.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/detail/ascii.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/codec/base64.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/codec/binary.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/codec/bit7.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/codec/bit8.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/codec/codec.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/codec/percent.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/codec/q_codec.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/codec/quoted_printable.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/mime/mailboxes.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/mime/message.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/mime/mime.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/net/dialog.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/net/upgradable_stream.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/imap/client.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/imap/error.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/imap/types.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/pop3/client.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/pop3/error.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/pop3/types.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/smtp/client.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/smtp/error.hpp
-    ${PROJECT_SOURCE_DIR}/include/mailio/smtp/types.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/export.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/mailxx.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/imap.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/import.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/message.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/pop3.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/smtp.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/detail/append.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/detail/async_mutex.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/detail/ascii.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/codec/base64.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/codec/binary.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/codec/bit7.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/codec/bit8.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/codec/codec.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/codec/percent.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/codec/q_codec.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/codec/quoted_printable.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/mime/mailboxes.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/mime/message.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/mime/mime.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/net/dialog.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/net/upgradable_stream.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/imap/client.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/imap/error.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/imap/types.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/pop3/client.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/pop3/error.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/pop3/types.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/smtp/client.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/smtp/error.hpp
+    ${PROJECT_SOURCE_DIR}/include/mailxx/smtp/types.hpp
 )
 
 # handle documentation
-if(${MAILIO_BUILD_DOCUMENTATION})
+if(${mailxx_BUILD_DOCUMENTATION})
     find_package(Doxygen COMPONENTS doxygen OPTIONAL_COMPONENTS dot)
     if(DOXYGEN_FOUND)
-        set(DOXYGEN_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/docs/mailio)
-        set(DOXYGEN_GENERATE_LATEX ${MAILIO_BUILD_LATEX_DOCUMENTATION})
+        set(DOXYGEN_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR}/docs/mailxx)
+        set(DOXYGEN_GENERATE_LATEX ${mailxx_BUILD_LATEX_DOCUMENTATION})
         set(DOXYGEN_OUTPUT_PATH ${DOCOUTDIR})
 
         doxygen_add_docs(docs ${PROJECT_SOURCE_DIR}/include ALL WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
     else(DOXYGEN_FOUND)
         message(STATUS "doxygen was not found, documentation will not be built")
     endif(DOXYGEN_FOUND)
-endif(${MAILIO_BUILD_DOCUMENTATION})
+endif(${mailxx_BUILD_DOCUMENTATION})
 
 add_library(${PROJECT_NAME} ${project_sources} ${project_headers})
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -142,8 +142,8 @@ else(IS_ABSOLUTE "${INCLUDE_INSTALL_DIR}")
   set(includedir "\${prefix}/${INCLUDE_INSTALL_DIR}/${PROJECT_NAME}")
 endif(IS_ABSOLUTE "${INCLUDE_INSTALL_DIR}")
 
-configure_file(mailio.pc.in ${CMAKE_BINARY_DIR}/mailio.pc IMMEDIATE @ONLY)
-install(FILES ${CMAKE_BINARY_DIR}/mailio.pc DESTINATION ${LIB_INSTALL_DIR}/pkgconfig)
+configure_file(mailxx.pc.in ${CMAKE_BINARY_DIR}/mailxx.pc IMMEDIATE @ONLY)
+install(FILES ${CMAKE_BINARY_DIR}/mailxx.pc DESTINATION ${LIB_INSTALL_DIR}/pkgconfig)
 
 configure_file(${PROJECT_SOURCE_DIR}/include/version.hpp.in version.hpp)
 install(FILES ${CMAKE_BINARY_DIR}/version.hpp DESTINATION ${INCLUDE_INSTALL_DIR}/${PROJECT_NAME})
@@ -179,7 +179,7 @@ else()
     target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
-install(DIRECTORY include/mailio DESTINATION ${INCLUDE_INSTALL_DIR})
+install(DIRECTORY include/mailxx DESTINATION ${INCLUDE_INSTALL_DIR})
 
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -224,26 +224,26 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}-config.cmake
 )
 
 # optionally build examples
-if(${MAILIO_BUILD_EXAMPLES})
+if(${mailxx_BUILD_EXAMPLES})
     add_subdirectory(examples)
     file(GLOB PNGS "${PROJECT_SOURCE_DIR}/examples/*.png")
     install(FILES ${PNGS} DESTINATION "${SHARE_INSTALL_DIR}/${PROJECT_NAME}/examples/")
-endif(${MAILIO_BUILD_EXAMPLES})
+endif(${mailxx_BUILD_EXAMPLES})
 
-if(${MAILIO_BUILD_TESTS})
+if(${mailxx_BUILD_TESTS})
     enable_testing()
     add_subdirectory(test)
     file(GLOB PNGS "${PROJECT_SOURCE_DIR}/test/aleph0.png")
     install(FILES ${PNGS} DESTINATION "${SHARE_INSTALL_DIR}/${PROJECT_NAME}/test/")
     file(GLOB TXTS "${PROJECT_SOURCE_DIR}/test/cv.txt")
     install(FILES ${TXTS} DESTINATION "${SHARE_INSTALL_DIR}/${PROJECT_NAME}/test/")
-endif(${MAILIO_BUILD_TESTS})
+endif(${mailxx_BUILD_TESTS})
 
 # optionally build C++20 modules (EXPERIMENTAL)
-if(${MAILIO_BUILD_MODULES})
+if(${mailxx_BUILD_MODULES})
     if(CMAKE_VERSION VERSION_LESS "3.28")
         message(WARNING "C++20 modules require CMake 3.28+. Skipping modules build.")
     else()
         add_subdirectory(modules)
     endif()
-endif(${MAILIO_BUILD_MODULES})
+endif(${mailxx_BUILD_MODULES})

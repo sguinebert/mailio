@@ -11,30 +11,30 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 */
 
 
-#define MAILIO_TESTING
+#define MAILXX_TESTING
 #define BOOST_TEST_MODULE pop3_reconnect_snapshot_test
 
 #include <boost/asio.hpp>
 #include <boost/test/unit_test.hpp>
-#include <mailio/net/tls_mode.hpp>
-#include <mailio/pop3/client.hpp>
+#include <mailxx/net/tls_mode.hpp>
+#include <mailxx/pop3/client.hpp>
 
 
 BOOST_AUTO_TEST_CASE(pop3_snapshot_after_auth)
 {
     boost::asio::io_context io_ctx;
-    mailio::pop3::options opts;
+    mailxx::pop3::options opts;
     opts.store_credentials_for_reconnect = true;
 
-    mailio::pop3::client conn(io_ctx.get_executor(), opts);
+    mailxx::pop3::client conn(io_ctx.get_executor(), opts);
     conn.debug_remember_connection("pop.example.com", "995",
-        mailio::net::tls_mode::implicit, nullptr, "pop.example.com");
+        mailxx::net::tls_mode::implicit, nullptr, "pop.example.com");
     conn.debug_remember_user_pass("user", "pass");
 
     const auto snap = conn.debug_snapshot();
     BOOST_TEST(snap.host == "pop.example.com");
     BOOST_TEST(snap.service == "995");
-    BOOST_TEST(snap.tls_mode == mailio::net::tls_mode::implicit);
+    BOOST_TEST(snap.tls_mode == mailxx::net::tls_mode::implicit);
     BOOST_TEST(snap.has_auth);
     BOOST_TEST(snap.username == "user");
     BOOST_TEST(snap.secret.has_value());

@@ -15,21 +15,21 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 
 #include <string>
 #include <boost/test/unit_test.hpp>
-#include <mailio/codec/base64.hpp>
-#include <mailio/detail/sasl.hpp>
+#include <mailxx/codec/base64.hpp>
+#include <mailxx/detail/sasl.hpp>
 
 
 static std::string decode_base64_single_line(const std::string& encoded)
 {
-    const auto policy = static_cast<std::string::size_type>(mailio::codec::line_len_policy_t::NONE);
-    mailio::base64 b64(policy, policy);
+    const auto policy = static_cast<std::string::size_type>(mailxx::codec::line_len_policy_t::NONE);
+    mailxx::base64 b64(policy, policy);
     return b64.decode({encoded});
 }
 
 
 BOOST_AUTO_TEST_CASE(sasl_plain_encoding)
 {
-    const std::string encoded = mailio::sasl::encode_plain("user", "pass");
+    const std::string encoded = mailxx::sasl::encode_plain("user", "pass");
     const std::string decoded = decode_base64_single_line(encoded);
     std::string expected;
     expected.push_back('\0');
@@ -41,7 +41,7 @@ BOOST_AUTO_TEST_CASE(sasl_plain_encoding)
 
 BOOST_AUTO_TEST_CASE(sasl_xoauth2_encoding)
 {
-    const std::string encoded = mailio::sasl::encode_xoauth2("user@example.com", "token");
+    const std::string encoded = mailxx::sasl::encode_xoauth2("user@example.com", "token");
     const std::string decoded = decode_base64_single_line(encoded);
     std::string expected;
     expected += "user=user@example.com";
@@ -54,7 +54,7 @@ BOOST_AUTO_TEST_CASE(sasl_xoauth2_encoding)
 
 BOOST_AUTO_TEST_CASE(sasl_login_encoding)
 {
-    const std::string encoded = mailio::sasl::encode_login("login");
+    const std::string encoded = mailxx::sasl::encode_login("login");
     const std::string decoded = decode_base64_single_line(encoded);
     BOOST_TEST(decoded == "login");
 }

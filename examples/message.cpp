@@ -16,17 +16,17 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 
 
 #include <iostream>
-#include <mailio/mime/mailboxes.hpp>
-#include <mailio/mime/message.hpp>
+#include <mailxx/mime/mailboxes.hpp>
+#include <mailxx/mime/message.hpp>
 
 
 using std::cout;
 using std::endl;
 using std::string;
-using mailio::string_t;
-using mailio::mail_address;
-using mailio::mime;
-using mailio::message;
+using mailxx::string_t;
+using mailxx::mail_address;
+using mailxx::mime;
+using mailxx::message;
 
 
 int main()
@@ -34,10 +34,10 @@ int main()
     // Set the file encoding to UTF-8 to properly see the letters in this snippet.
     {
         message msg;
-        msg.from(mail_address("mail io", "contact@mailio.dev"));
-        msg.add_recipient(mail_address("mail io", "contact@mailio.dev"));
+        msg.from(mail_address("mail io", "contact@mailxx.dev"));
+        msg.add_recipient(mail_address("mail io", "contact@mailxx.dev"));
         // The subject is automatically determined as UTF-8 since it contains 8bit characters. It is encoded as Quoted Printable,
-        msg.subject("Здраво, Свете!", mailio::codec::codec_t::QUOTED_PRINTABLE);
+        msg.subject("Здраво, Свете!", mailxx::codec::codec_t::QUOTED_PRINTABLE);
         msg.content("Hello, World!");
         string msg_str;
         msg.format(msg_str);
@@ -48,10 +48,10 @@ int main()
     // Set the file encoding to UTF-8 to properly see the letters in this snippet.
     {
         message msg;
-        msg.from(mail_address("mail io", "contact@mailio.dev"));
-        msg.add_recipient(mail_address("mail io", "contact@mailio.dev"));
+        msg.from(mail_address("mail io", "contact@mailxx.dev"));
+        msg.add_recipient(mail_address("mail io", "contact@mailxx.dev"));
         // The subject remains in 8bit because such header is set.
-        msg.subject("Здраво, Свете!", mailio::codec::codec_t::UTF8);
+        msg.subject("Здраво, Свете!", mailxx::codec::codec_t::UTF8);
         msg.content("Hello, World!");
         string msg_str;
         msg.format(msg_str);
@@ -61,8 +61,8 @@ int main()
     // Set the file encoding to ISO-8859-2 to properly see the letters in this snippet.
     {
         message msg;
-        msg.from(mail_address("mail io", "contact@mailio.dev"));
-        msg.add_recipient(mail_address("mail io", "contact@mailio.dev"));
+        msg.from(mail_address("mail io", "contact@mailxx.dev"));
+        msg.add_recipient(mail_address("mail io", "contact@mailxx.dev"));
         msg.content_transfer_encoding(mime::content_transfer_encoding_t::QUOTED_PRINTABLE);
         msg.subject_raw(string_t("Zdravo, Sveti�u!", "iso-8859-2"));
         msg.content("Hello, World!");
@@ -75,8 +75,8 @@ int main()
     // Set the file encoding to ISO-8859-5 to properly see the letters in this snippet.
     {
         message msg;
-        msg.from(mail_address("mail io", "contact@mailio.dev"));
-        msg.add_recipient(mail_address("mail io", "contact@mailio.dev"));
+        msg.from(mail_address("mail io", "contact@mailxx.dev"));
+        msg.add_recipient(mail_address("mail io", "contact@mailxx.dev"));
         msg.content_transfer_encoding(mime::content_transfer_encoding_t::BASE_64);
         msg.subject_raw(string_t("������, �����", "iso-8859-5"));
         msg.content("Hello, World!");
@@ -88,11 +88,11 @@ int main()
     // Set the file encoding to UTF-8 to properly see the letters in this snippet.
     {
         message msg;
-        msg.from(mail_address("mail io", "contact@mailio.dev"));
-        msg.add_recipient(mail_address("mail io", "contact@mailio.dev"));
+        msg.from(mail_address("mail io", "contact@mailxx.dev"));
+        msg.add_recipient(mail_address("mail io", "contact@mailxx.dev"));
         msg.content_transfer_encoding(mime::content_transfer_encoding_t::BASE_64);
         msg.subject_raw(string_t("Здраво, Свете!", "utf-8",
-            mailio::codec::codec_t::QUOTED_PRINTABLE));
+            mailxx::codec::codec_t::QUOTED_PRINTABLE));
         msg.content("Hello, World!");
         string msg_str;
         msg.format(msg_str);
@@ -101,8 +101,8 @@ int main()
     }
 
     {
-        string msg_str = "From: mail io <contact@mailio.dev>\r\n"
-            "To: mail io <contact@mailio.dev>\r\n"
+        string msg_str = "From: mail io <contact@mailxx.dev>\r\n"
+            "To: mail io <contact@mailxx.dev>\r\n"
             "Date: Sat, 18 Jun 2022 05:56:34 +0000\r\n"
             "Subject: =?ISO-8859-2?Q?Zdravo,_Sveti=E6u!?=\r\n"
             "\r\n"
@@ -114,8 +114,8 @@ int main()
     }
 
     {
-        string msg_str = "From: mail io <contact@mailio.dev>\r\n"
-            "To: mail io <contact@mailio.dev>\r\n"
+        string msg_str = "From: mail io <contact@mailxx.dev>\r\n"
+            "To: mail io <contact@mailxx.dev>\r\n"
             "Date: Sat, 18 Jun 2022 05:56:34 +0000\r\n"
             "Subject: =?ISO-8859-5?Q?=B7=D4=E0=D0=D2=DE,_=C1=D2=D5=E2=D5!?=\r\n"
             "\r\n"
@@ -127,14 +127,14 @@ int main()
     }
 
     {
-        string msg_str = "From: mail io <contact@mailio.dev>\r\n"
-            "To: mail io <contact@mailio.dev>\r\n"
+        string msg_str = "From: mail io <contact@mailxx.dev>\r\n"
+            "To: mail io <contact@mailxx.dev>\r\n"
             "Date: Sat, 18 Jun 2022 05:56:34 +0000\r\n"
             "Subject: =?UTF-8?Q?=D0=97=D0=B4=D1=80=D0=B0=D0=B2=D0=BE,_=D0=A1=D0=B2=D0=B5=D1=82=D0=B5!?=\r\n"
             "\r\n"
             "Hello, World!\r\n";
         message msg;
-        msg.line_policy(mailio::codec::line_len_policy_t::MANDATORY);
+        msg.line_policy(mailxx::codec::line_len_policy_t::MANDATORY);
         msg.parse(msg_str);
         cout << msg.subject() << endl;
         // The subject is printed as `Здраво, Свете!` in the UTF-8 encoding.

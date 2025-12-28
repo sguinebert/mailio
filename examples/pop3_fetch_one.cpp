@@ -20,16 +20,16 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <boost/asio/detached.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
-#include <mailio/mime/message.hpp>
-#include <mailio/net/tls_mode.hpp>
-#include <mailio/pop3/client.hpp>
+#include <mailxx/mime/message.hpp>
+#include <mailxx/net/tls_mode.hpp>
+#include <mailxx/pop3/client.hpp>
 
 
-using mailio::codec;
-using mailio::message;
-using mailio::pop3::client;
-using mailio::pop3::error;
-using mailio::net::dialog_error;
+using mailxx::codec;
+using mailxx::message;
+using mailxx::pop3::client;
+using mailxx::pop3::error;
+using mailxx::net::dialog_error;
 using std::cout;
 using std::endl;
 
@@ -44,17 +44,17 @@ int main()
         {
             try
             {
-                mailio::pop3::options options;
+                mailxx::pop3::options options;
                 options.tls.use_default_verify_paths = true;
-                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify = mailxx::net::verify_mode::peer;
                 options.tls.verify_host = true;
 
                 client conn(io_ctx.get_executor(), options);
                 co_await conn.connect("pop.mail.yahoo.com", "995",
-                    mailio::net::tls_mode::implicit, &ssl_ctx, "pop.mail.yahoo.com");
+                    mailxx::net::tls_mode::implicit, &ssl_ctx, "pop.mail.yahoo.com");
                 co_await conn.read_greeting();
                 // modify to use existing yahoo account
-                co_await conn.login("mailio@yahoo.com", "mailiopass");
+                co_await conn.login("mailxx@yahoo.com", "mailxxpass");
 
                 std::string raw = co_await conn.retr(1);
                 message msg;

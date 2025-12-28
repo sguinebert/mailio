@@ -1,185 +1,464 @@
+# mailxx
 
-# mailio #
+![C++](https://img.shields.io/badge/C++-23-blue)
+[![License](https://img.shields.io/badge/License-MIT-darkgreen)](LICENSE)
+![FreeBSD](https://img.shields.io/badge/OS-FreeBSD-870000)
+![Linux](https://img.shields.io/badge/OS-Linux-870000)
+![Windows](https://img.shields.io/badge/OS-Windows-870000)
+![macOS](https://img.shields.io/badge/OS-macOS-870000)
 
-*mailio* 是一个用于构建MIME格式和实现SMTP以及POP3协议的跨平台C++库，基于C++17标准，使用Boost。
+**mailxx** 是一个现代化的、仅头文件的 C++23 库，用于电子邮件协议（SMTP、IMAP、POP3），完全支持使用协程的 async/await。
 
-# 用例 #
+## ✨ 主要特性
 
-为了发送一封邮件，你必须创建一个 `message` 对象，并且设置其各个属性，例如 `author`, `recipient`, `subject`等等。
+- **仅头文件**：无需编译，直接包含使用
+- **现代 C++23**：利用协程、概念、范围和 std::expected
+- **异步/等待**：原生协程支持，使用 `co_await` 进行非阻塞 I/O
+- **连接池**：内置连接池，支持自动重连
+- **速率限制**：令牌桶算法用于 API 速率限制
+- **灵活的 Asio**：同时支持 Boost.Asio 和独立 Asio
 
-旋即你需要构建一个`smtp` (或者`smtps`)类。`message`对象必需通过这个`smtp`连接进行发送。
+## 📧 协议支持
+
+| 协议 | 覆盖率 | 主要特性 |
+|------|--------|----------|
+| **SMTP** | 100% | PIPELINING、SIZE、8BITMIME、SMTPUTF8、DSN、AUTH（LOGIN、PLAIN、CRAM-MD5） |
+| **IMAP** | 98% | IDLE、NAMESPACE、QUOTA、SORT/THREAD、SEARCH、文件夹管理 |
+| **POP3** | 95% | UIDL、TOP、STAT、LIST、身份验证 |
+
+## 🚀 快速开始
+
+### 安装
+
+**仅头文件** - 只需将 `include/mailxx` 目录复制到您的项目中，或者：
+
+```bash
+# 克隆仓库
+git clone https://github.com/sguinebert/mailxx.git
+
+# 或使用 CMake FetchContent
+```
+
+### 依赖要求
+
+- C++23 兼容编译器（GCC 13+、Clang 16+、MSVC 2022+）
+- Boost 1.81+（Asio、Beast、SSL）或独立 Asio
+- OpenSSL
+
+### 发送邮件
+
+mailxx 支持多种异步模式。选择适合您项目的方式：
+
+#### 🔹 协程 (C++20/23)
 
 ```cpp
-message msg;
-msg.from(mail_address("mailio library", "mailio@gmail.com"));
-msg.add_recipient(mail_address("mailio library", "mailio@gmail.com"));
-msg.subject("图样的SMTP邮件");
-msg.content("谈笑风生");
+#include <mailxx/mailxx.hpp>
 
-smtps conn("smtp.gmail.com", 587);
-conn.authenticate("mailio@gmail.com", "mailiopass", smtps::auth_method_t::START_TLS);
-conn.submit(msg);
+mailxx::task<void> send_email() {
+    mailxx::asio::io_context io;
+    mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
+
+    co_await smtp.async_connect();
+    co_await smtp.async_starttls();
+    co_await smtp.async_authenticate("user@gmail.com", "app-password", 
+                                      mailxx::smtp::auth_method::login);
+
+    mailxx::mime::message msg;
+    msg.from({"发送者姓名", "sender@gmail.com"});
+    msg.add_recipient({"收件人", "recipient@example.com"});
+    msg.subject("来自 mailxx 的问候！");
+    msg.content("这是使用 mailxx 发送的测试邮件。");
+
+    co_await smtp.async_send(msg);
+    co_await smtp.async_quit();
+}
 ```
 
-为了收取邮件，你需要创建一个空白的`message`对象来承载接收到的数据。邮件数据会通过POP3或者IMAP传递，这取决于邮件服务器。
-如果要使用POP3，一个`pop3`(或者`pop3s`)实例需被创建。
+#### 🔹 回调 (传统异步)
 
 ```cpp
-pop3s conn("pop.mail.yahoo.com", 995);
-conn.authenticate("mailio@yahoo.com", "mailiopass", pop3s::auth_method_t::LOGIN);
-message msg;
-conn.fetch(1, msg);
+#include <mailxx/mailxx.hpp>
+
+mailxx::asio::io_context io;
+mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
+
+smtp.async_connect([&](mailxx::error_code ec) {
+    if (ec) { std::cerr << "连接失败: " << ec.message() << "\n"; return; }
+    
+    smtp.async_starttls([&](mailxx::error_code ec) {
+        if (ec) { std::cerr << "STARTTLS 失败: " << ec.message() << "\n"; return; }
+        
+        smtp.async_authenticate("user@gmail.com", "app-password",
+                                 mailxx::smtp::auth_method::login,
+                                 [&](mailxx::error_code ec) {
+            if (ec) { std::cerr << "认证失败: " << ec.message() << "\n"; return; }
+            
+            mailxx::mime::message msg;
+            msg.from({"发送者", "sender@gmail.com"});
+            msg.add_recipient({"收件人", "recipient@example.com"});
+            msg.subject("来自 mailxx 的问候！");
+            msg.content("回调风格！");
+            
+            smtp.async_send(msg, [&](mailxx::error_code ec) {
+                if (!ec) std::cout << "邮件已发送！\n";
+                smtp.async_quit([](auto) {});
+            });
+        });
+    });
+});
+
+io.run();
 ```
 
-IMAP也是相似的。然而因为IMAP辨识文件夹，所以你必须指定：
+#### 🔹 Futures (std::future)
+
 ```cpp
-imaps conn("imap.gmail.com", 993);
-conn.authenticate("mailio@gmail.com", "mailiopass", imap::auth_method_t::LOGIN);
-message msg;
-conn.fetch("inbox", 1, msg);
+#include <mailxx/mailxx.hpp>
+
+mailxx::asio::io_context io;
+mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
+
+// 使用 mailxx::use_future 令牌
+std::future<void> fut = smtp.async_connect(mailxx::use_future);
+
+std::thread io_thread([&]() { io.run(); });
+
+fut.get();  // 等待连接
+
+auto auth_fut = smtp.async_authenticate("user@gmail.com", "app-password",
+                                         mailxx::smtp::auth_method::login,
+                                         mailxx::use_future);
+auth_fut.get();
+
+mailxx::mime::message msg;
+// ... 设置消息 ...
+
+smtp.async_send(msg, mailxx::use_future).get();
+smtp.async_quit(mailxx::use_future).get();
+
+io_thread.join();
 ```
 
-更多进阶姿势在`examples`文件夹里。下文为如何编译：
+#### 🔹 同步 (阻塞)
 
-给Gmail用户的提示：你可能需要[注册](https://support.google.com/accounts/answer/6010255) *mailio* 作为一个可信应用。 关注
-[Gmail指示](https://support.google.com/accounts/answer/3466521) 来添加 *mailio* 并为协议生成密码。
+```cpp
+#include <mailxx/mailxx.hpp>
 
-# 依赖 #
+mailxx::asio::io_context io;
+mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
 
-*mailio*库理应在支持C++17、Boost库和CMake的所有平台上奏效。
+// 简单的阻塞调用
+smtp.connect();
+smtp.starttls();
+smtp.authenticate("user@gmail.com", "app-password", 
+                   mailxx::smtp::auth_method::login);
 
-对于Linux用户，如下配置是历经测试的：
-* Ubuntu 20.04.3 LTS.
-* Gcc 8.3.0.
-* Boost 1.66 with Regex, Date Time available.
-* POSIX Threads, OpenSSL and Crypto libraries available on the system.
-* CMake 3.16.3
+mailxx::mime::message msg;
+msg.from({"发送者姓名", "sender@gmail.com"});
+msg.add_recipient({"收件人", "recipient@example.com"});
+msg.subject("来自 mailxx 的问候！");
+msg.content("同步风格 - 简单直接。");
 
-对于FreeBSD用户，如下配置是历经测试的：
-* FreeBSD 13.
-* Clang 11.0.1.
-* Boost 1.72.0 (port).
-* CMake 3.21.3.
-
-对于macOS用户，如下配置是历经测试的：
-* Apple LLVM 9.0.0.
-* Boost 1.66.
-* OpenSSL 1.0.2n available on the system.
-* CMake 3.16.3.
-
-对于微软Windows用户，如下配置是历经测试的：
-* Windows 10.
-* Visual Studio 2019 Community Edition.
-* Boost 1.71.0.
-* OpenSSL 1.0.2t.
-* CMake 3.17.3.
-
-对于Cygwin用户，如下配置是历经测试的：
-* Cygwin 3.2.0 on Windows 10.
-* Gcc 10.2.
-* Boost 1.66.
-* CMake 3.20.
-* LibSSL 1.0.2t and LibSSL 1.1.1f development packages.
-
-对于MinGW用户，如下配置是历经测试的：
-* MinGW 17.1 on Windows 10 which comes with the bundled Gcc and Boost.
-* Gcc 9.2.
-* Boost 1.71.0.
-* OpenSSL 1.0.2t.
-* CMake 3.17.3.
-
-# 步骤 #
-
-只需要两步即可构建：首先克隆[分支](https://github.com/karastojko/mailio.git),然后使用CMake或者Vcpkg
-
-## CMake ##
-
-确保OpenSSL, Boost, CMake都在PATH中。否则，需要设置CMake参数`-DOPENSSL_ROOT_DIR` 和 `-DBOOST_ROOT`。
-Boost必须在有OpenSSL下构建。如果在PATH中不能发现这些库，通过设置环境变量`library-path` 和 `include`来隐式设置。
-你只需要在`bootstrap`后运行`b2`脚本。
-
-动态和静态库都会构建于`build`文件夹。如果你需要把库安装到一个特定的路径(例如`/opt/mailio`),设置CMake参数`-DCMAKE_INSTALL_PREFIX`。
-
-其他可行的参数有`BUILD_SHARED_LIBS`(默认开启，开启会构建动态链接库), `MAILIO_BUILD_DOCUMENTATION`(默认开启，会生成Doxygen文档，如果安装了的话), `MAILIO_BUILD_EXAMPLES`(默认开启，构建示例代码)
-
-### Linux, FreeBSD, macOS, Cygwin ###
-从终端直接进入项目路径构建，只需运行：
-```
-mkdir build
-cd ./build
-cmake ..
-make install
+smtp.send(msg);
+smtp.quit();
 ```
 
-### 微软 Windows/Visual Studio ###
-从命令提示符进入构建，只需运行：
+### 接收邮件（IMAP）
+
+#### 协程
+
+```cpp
+#include <mailxx/mailxx.hpp>
+
+mailxx::task<void> fetch_emails() {
+    mailxx::asio::io_context io;
+    mailxx::imap::client imap(io, "imap.gmail.com", 993);
+
+    co_await imap.async_connect_ssl();
+    co_await imap.async_authenticate("user@gmail.com", "app-password",
+                                      mailxx::imap::auth_method::login);
+
+    co_await imap.async_select("INBOX");
+
+    // 获取邮件
+    auto msg = co_await imap.async_fetch(1);
+    std::cout << "主题: " << msg.subject() << "\n";
+    std::cout << "发件人: " << msg.from().name << "\n";
+
+    co_await imap.async_logout();
+}
 ```
-mkdir build
-cd .\build
-cmake ..
+
+#### 带进度的回调
+
+```cpp
+mailxx::imap::client imap(io, "imap.gmail.com", 993);
+
+imap.async_connect_ssl([&](mailxx::error_code ec) {
+    if (ec) return;
+    
+    imap.async_authenticate("user@gmail.com", "app-password",
+                             mailxx::imap::auth_method::login,
+                             [&](mailxx::error_code ec) {
+        if (ec) return;
+        
+        imap.async_select("INBOX", [&](mailxx::error_code ec, 
+                                        const mailxx::imap::mailbox_info& info) {
+            std::cout << "邮件数: " << info.exists << "\n";
+            std::cout << "未读: " << info.unseen << "\n";
+            
+            // 带进度回调的获取
+            mailxx::imap::fetch_options opts;
+            opts.on_progress = [](size_t bytes, size_t total) {
+                std::cout << "进度: " << (bytes * 100 / total) << "%\n";
+            };
+            
+            imap.async_fetch(1, opts, [&](mailxx::error_code ec, 
+                                           mailxx::mime::message msg) {
+                if (!ec) {
+                    std::cout << "主题: " << msg.subject() << "\n";
+                }
+            });
+        });
+    });
+});
 ```
-会创造一个解决方案文件，在Visual Studio(或者MSBuild)中打开即可构建。
 
-### 微软 Windows/MinGW ###
-用`open_distro_window.bat`打开命令提示符，只需运行：
+### IMAP IDLE（推送通知）
+
+```cpp
+// 协程风格
+auto result = co_await imap.async_idle(std::chrono::minutes(29));
+
+if (result == mailxx::imap::idle_result::new_mail) {
+    std::cout << "新邮件到达！\n";
+}
+
+// 带事件处理器的回调风格
+imap.async_idle(std::chrono::minutes(29), 
+    [](mailxx::error_code ec, mailxx::imap::idle_result result) {
+        if (result == mailxx::imap::idle_result::new_mail) {
+            std::cout << "新邮件到达！\n";
+        }
+    });
 ```
-mkdir build
-cd .\build
-cmake.exe .. -G "MinGW Makefiles"
-make install
+
+### 连接池
+
+```cpp
+#include <mailxx/pool/smtp_pool.hpp>
+
+mailxx::pool::pool_config config{
+    .min_connections = 2,
+    .max_connections = 10,
+    .connection_timeout = std::chrono::seconds(30),
+    .idle_timeout = std::chrono::minutes(5)
+};
+
+mailxx::pool::smtp_pool pool(io, "smtp.example.com", 587, config);
+
+// 协程风格
+auto conn = co_await pool.async_acquire();
+co_await conn->async_send(message);
+// 连接自动返回池中
+
+// 回调风格
+pool.async_acquire([&](mailxx::error_code ec, 
+                        mailxx::pool::connection_handle conn) {
+    if (ec) return;
+    
+    conn->async_send(message, [conn](mailxx::error_code ec) {
+        // 句柄销毁时连接自动返回
+        if (!ec) std::cout << "通过池连接发送\n";
+    });
+});
 ```
 
-## Vcpkg ##
-用[Vcpkg](https://github.com/microsoft/vcpkg)安装, 只需要运行：
+### 速率限制
+
+```cpp
+#include <mailxx/pool/rate_limiter.hpp>
+
+// 每小时 100 封邮件
+mailxx::pool::rate_limiter limiter(100, std::chrono::hours(1));
+
+// 协程风格
+for (const auto& msg : messages) {
+    co_await limiter.async_acquire();  // 超过限制时等待
+    co_await smtp.async_send(msg);
+}
+
+// 回调风格
+void send_next(size_t index) {
+    if (index >= messages.size()) return;
+    
+    limiter.async_acquire([&, index](mailxx::error_code ec) {
+        smtp.async_send(messages[index], [&, index](mailxx::error_code ec) {
+            send_next(index + 1);  // 链接下一次发送
+        });
+    });
+}
+send_next(0);
+
+// 同步检查（非阻塞）
+if (limiter.try_acquire()) {
+    smtp.send(msg);
+} else {
+    std::cout << "超过速率限制，" 
+              << limiter.time_until_available().count() << "ms 后重试\n";
+}
 ```
-vcpkg install mailio
+
+## 🔄 完成令牌模式
+
+mailxx 遵循 Asio 完成令牌模式，支持：
+
+| 模式 | 令牌 | 使用场景 |
+|------|------|----------|
+| 回调 | `[](error_code, result) {}` | 传统异步，细粒度控制 |
+| 协程 | `mailxx::use_awaitable` | 现代 C++20/23，清晰的顺序代码 |
+| Futures | `mailxx::use_future` | 与 std::future 工作流集成 |
+| 延迟 | `mailxx::deferred` | 延迟执行，可组合操作 |
+| 同步 | *(无令牌)* | 简单阻塞调用 |
+
+```cpp
+// 以下是等效的连接方式：
+smtp.connect();                                         // 同步
+smtp.async_connect([](auto ec) { /* ... */ });         // 回调
+co_await smtp.async_connect(mailxx::use_awaitable);    // 协程
+smtp.async_connect(mailxx::use_future).get();          // Future
+auto op = smtp.async_connect(mailxx::deferred);        // 延迟
+std::move(op)(handler);                                // 稍后执行
 ```
 
-# 特性 #
-* 递归的MIME消息格式构建和解析
-* 识别最常用的MIME头，例如subject，recipients，content
-* 所有编码格式都支持，例如7bit，8bit，二进制，Base64和QP
-* Subject, attachment和name部分可以用ascii和utf8编码。
-* 所有的媒体格式都可以被识别，包括嵌入的MIME消息。
-* MIME消息有可配置的行长度策略和解析的严格模式
-* 包含无加密、SSL、TLS等版本的，用于发送消息的SMTP实现
-* 包含无加密、SSL、TLS等版本的，用于接受和删除邮件，获得邮箱统计数据的POP3实现
-* 包含无加密、SSL、TLS等版本的，用于接受和删除邮件，获得邮箱统计数据，管理文件夹的IMAP实现
+## 📁 项目结构
 
-# 议题 #
-并非所有邮件服务器都被覆盖测试了。如果你发现了什么不能用的库，那么请联系我们。这里是已知的，会在未来修复的问题：
+```
+mailxx/
+├── include/mailxx/
+│   ├── mailxx.hpp          # 主头文件（包含所有）
+│   ├── codec/              # Base64、Quoted-Printable 等
+│   ├── mime/               # MIME 消息处理
+│   ├── smtp/               # SMTP 客户端
+│   ├── imap/               # IMAP 客户端  
+│   ├── pop3/               # POP3 客户端
+│   ├── pool/               # 连接池和速率限制
+│   ├── net/                # 网络抽象
+│   └── detail/             # 内部实现
+├── examples/               # 使用示例
+├── test/                   # 单元测试
+└── modules/                # C++20 模块（实验性）
+```
 
-* 无ASCII附件名称为UTF-8
+## 🔧 CMake 集成
 
-# 贡献者 #
-* [Trevor Mellon](https://github.com/TrevorMellon): 提供了CMake构建脚本
-* [Kira Backes](mailto:kira.backes[at]nrwsoft.de): 修复了默认邮件日期
-* [sledgehammer_999](mailto:hammered999[at]gmail.com): 用Boost随机库替换了std随机库
-* [Paul Tsouchlos](mailto:developer.paul.123[at]gmail.com): 更新了构建脚本
-* [Anton Zhvakin](mailto:a.zhvakin[at]galament.com): 替换了被弃用的Boost Asio API
-* [terminator356](mailto:termtech[at]rogers.com): 用UID搜索获取IMAP消息
-* [Ilya Tsybulsky](mailto:ilya.tsybulsky[at]gmail.com): 解决了MIME解析和格式化问题，提供了POP3的UIDL命令
-* [Ayaz Salikhov](https://github.com/mathbunnyru): 提供了Conan包管理器
-* [Tim Lukas Harken](tlh[at]tlharken.de): 移除了编译警告
-* [Rainer Sabelka](mailto:saba[at]sabanet.at]): 提供了接受邮件时的SMTP回执
-* [David Garcia](mailto:david.garcia[at]antiteum.com): 提供了Vcpkg支持
-* [ImJustStokedToBeHere](https://github.com/ImJustStokedToBeHere): 解决了IMAP中的打字错误
-* [lifof](mailto:youssef.beddad[at]gmail.com): 提供了MinGW编译支持
-* [Canyon E](https://github.com/canyone2015): 解决了IMAP文件夹定界符的静态变量问题
-* [ostermal](https://github.com/ostermal): 修复了MIME头中的水平标签的bug
-* [MRsoymilk](mailto:313958485[at]qq.com): 修复了发送附件的bug
-* [Don Yihtseu](https://github.com/tsurumi-yizhou): 提供了中文文档
-* [Orchistro](https://github.com/orchistro): Improving CMake build script.
-* [Leonhard Kipp](mailto:Leonhard.Kipp[at]ppro.com): Proper way to build the shared library. Message formatting options. Optional message subject.
-* [Abril Rincón Blanco](mailto:git[at]rinconblanco.es): Compilation fix for Clang earlier than the version 14.
-* [yjm6560](https://github.com/yjm6560): Various IMAP bugs.
-* [Hannah Sauermann](mailto:hannah.sauermann[at]seclous.com): Fix for the `stringstream` usage in older standard libraries.
-* [Matheus Gabriel Werny](mailto:matheusgwdl[at]protonmail.com): CMake fixes and improvements.
-* [stitch3210](https://github.com/stitch3210): Case insensitive headers.
-* [Luigi Masdea](luigimasdea0[at]gmail.com): Typo error.
-* [Charlie Wolf](charlie[at]wolf.is): Additional attributes in the content type.
-* [Mateusz Golebiewski](https://github.com/ubinoob1): Fix for EHLO not being sent after STARTTLS.
+```cmake
+# 方式 1：FetchContent
+include(FetchContent)
+FetchContent_Declare(
+    mailxx
+    GIT_REPOSITORY https://github.com/sguinebert/mailxx.git
+    GIT_TAG main
+)
+FetchContent_MakeAvailable(mailxx)
 
+target_link_libraries(your_target PRIVATE mailxx::mailxx)
 
-# 联系方式 #
-如果你发现了bug，请给我的邮箱：contact (at) alepho.com 发邮件。苟利mailio生死以，岂因祸福避趋之。
+# 方式 2：find_package（安装后）
+find_package(mailxx REQUIRED)
+target_link_libraries(your_target PRIVATE mailxx::mailxx)
+```
+
+## 📦 C++20 模块（实验性）
+
+mailxx 提供实验性的 C++20 模块支持，以获得更快的编译速度和更好的封装：
+
+```
+modules/
+├── mailxx.cppm          # 主模块接口
+├── mailxx.codec.cppm    # Base64、Quoted-Printable 等
+├── mailxx.mime.cppm     # MIME 消息处理
+├── mailxx.smtp.cppm     # SMTP 客户端
+├── mailxx.imap.cppm     # IMAP 客户端
+├── mailxx.pop3.cppm     # POP3 客户端
+└── mailxx.net.cppm      # 网络抽象
+```
+
+### 模块使用方式
+
+```cpp
+import mailxx;           // 导入所有内容
+// 或选择性导入：
+import mailxx.smtp;      // 仅 SMTP
+import mailxx.mime;      // 仅 MIME
+
+int main() {
+    mailxx::smtp::client smtp(io, "smtp.gmail.com", 587);
+    // ...
+}
+```
+
+### CMake 模块配置
+
+```cmake
+# 需要 CMake 3.28+ 和兼容的编译器
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_SCAN_FOR_MODULES ON)
+
+add_executable(my_app main.cpp)
+target_sources(my_app
+    PUBLIC FILE_SET CXX_MODULES FILES
+        ${mailxx_SOURCE_DIR}/modules/mailxx.cppm
+        ${mailxx_SOURCE_DIR}/modules/mailxx.smtp.cppm
+        # ... 根据需要添加其他模块
+)
+```
+
+### 编译器支持
+
+| 编译器 | 模块支持 | 备注 |
+|--------|----------|------|
+| **MSVC 2022** | ✅ 完整 | 目前支持最好 |
+| **GCC 14+** | ✅ 良好 | 需要 `-fmodules-ts` |
+| **Clang 17+** | ⚠️ 部分 | 正在快速改进 |
+
+> **注意**：C++20 模块仍在发展中。对于生产环境，建议使用传统的仅头文件方式，直到模块工具链成熟。
+
+## 🔐 安全说明
+
+- **永远不要硬编码密码** - 使用环境变量或安全保险库
+- 启用 2FA 时，为 Gmail/Outlook **使用应用密码**
+- **优先使用 TLS/SSL** 连接（端口 465/993/995 或在 587/143/110 上使用 STARTTLS）
+
+## 📋 支持的 RFC
+
+| RFC | 描述 |
+|-----|------|
+| [RFC 5321](https://tools.ietf.org/html/rfc5321) | SMTP 协议 |
+| [RFC 5322](https://tools.ietf.org/html/rfc5322) | 互联网消息格式 |
+| [RFC 3501](https://tools.ietf.org/html/rfc3501) | IMAP4rev1 |
+| [RFC 1939](https://tools.ietf.org/html/rfc1939) | POP3 协议 |
+| [RFC 2045-2049](https://tools.ietf.org/html/rfc2045) | MIME |
+| [RFC 2177](https://tools.ietf.org/html/rfc2177) | IMAP IDLE |
+| [RFC 2087](https://tools.ietf.org/html/rfc2087) | IMAP QUOTA |
+| [RFC 2342](https://tools.ietf.org/html/rfc2342) | IMAP NAMESPACE |
+| [RFC 5256](https://tools.ietf.org/html/rfc5256) | IMAP SORT/THREAD |
+| [RFC 2920](https://tools.ietf.org/html/rfc2920) | SMTP PIPELINING |
+| [RFC 1870](https://tools.ietf.org/html/rfc1870) | SMTP SIZE |
+| [RFC 6152](https://tools.ietf.org/html/rfc6152) | SMTP 8BITMIME |
+| [RFC 6531](https://tools.ietf.org/html/rfc6531) | SMTP SMTPUTF8 |
+| [RFC 3461](https://tools.ietf.org/html/rfc3461) | SMTP DSN |
+
+## 📄 许可证
+
+MIT 许可证 - 版权所有 (c) 2025 Sylvain Guinebert
+
+## 🙏 致谢
+
+本项目最初受到 Tomislav Karastojković 的 [mailio](https://github.com/karastojko/mailio) 启发。
+mailxx 已经发展成为一个完全重新设计的现代 C++23 库，支持 async/协程、仅头文件架构和大量新功能。
+
+## 📬 联系方式
+
+- **问题反馈**：[GitHub Issues](https://github.com/sguinebert/mailxx/issues)
+- **作者**：Sylvain Guinebert

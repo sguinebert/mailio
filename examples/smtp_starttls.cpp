@@ -4,37 +4,37 @@
 #include <boost/asio/detached.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
-#include <mailio/mime/message.hpp>
-#include <mailio/net/tls_mode.hpp>
-#include <mailio/smtp/client.hpp>
+#include <mailxx/mime/message.hpp>
+#include <mailxx/net/tls_mode.hpp>
+#include <mailxx/smtp/client.hpp>
 
-using mailio::message;
-using mailio::mail_address;
-using mailio::smtp::auth_method;
-using mailio::smtp::client;
-using mailio::smtp::error;
-using mailio::net::dialog_error;
+using mailxx::message;
+using mailxx::mail_address;
+using mailxx::smtp::auth_method;
+using mailxx::smtp::client;
+using mailxx::smtp::error;
+using mailxx::net::dialog_error;
 
 boost::asio::awaitable<void> send_email(boost::asio::io_context& io_ctx, boost::asio::ssl::context& ssl_ctx)
 {
     try
     {
-        mailio::smtp::options options;
+        mailxx::smtp::options options;
         options.tls.use_default_verify_paths = true;
-        options.tls.verify = mailio::net::verify_mode::peer;
+        options.tls.verify = mailxx::net::verify_mode::peer;
         options.tls.verify_host = true;
         options.auto_starttls = true;
 
         client conn(io_ctx.get_executor(), options);
         co_await conn.connect("smtp.gmail.com", "587",
-            mailio::net::tls_mode::starttls, &ssl_ctx, "smtp.gmail.com");
+            mailxx::net::tls_mode::starttls, &ssl_ctx, "smtp.gmail.com");
 
         co_await conn.authenticate("user@gmail.com", "password", auth_method::login);
 
         message msg;
         msg.from(mail_address("Sender", "user@gmail.com"));
         msg.add_recipient(mail_address("Recipient", "recipient@example.com"));
-        msg.subject("Test from mailio async");
+        msg.subject("Test from mailxx async");
         msg.content("Hello, World!");
 
         co_await conn.send(msg);

@@ -20,13 +20,13 @@ copy at http://www.freebsd.org/copyright/freebsd-license.html.
 #include <boost/asio/detached.hpp>
 #include <boost/asio/ssl.hpp>
 #include <boost/asio/use_awaitable.hpp>
-#include <mailio/imap/client.hpp>
-#include <mailio/net/tls_mode.hpp>
+#include <mailxx/imap/client.hpp>
+#include <mailxx/net/tls_mode.hpp>
 
 
-using mailio::imap::client;
-using mailio::imap::error;
-using mailio::net::dialog_error;
+using mailxx::imap::client;
+using mailxx::imap::error;
+using mailxx::net::dialog_error;
 using std::cout;
 using std::endl;
 
@@ -41,17 +41,17 @@ int main()
         {
             try
             {
-                mailio::imap::options options;
+                mailxx::imap::options options;
                 options.tls.use_default_verify_paths = true;
-                options.tls.verify = mailio::net::verify_mode::peer;
+                options.tls.verify = mailxx::net::verify_mode::peer;
                 options.tls.verify_host = true;
 
                 client conn(io_ctx.get_executor(), options);
                 co_await conn.connect("imap.zoho.com", "993",
-                    mailio::net::tls_mode::implicit, &ssl_ctx, "imap.zoho.com");
+                    mailxx::net::tls_mode::implicit, &ssl_ctx, "imap.zoho.com");
                 co_await conn.read_greeting();
                 // modify to use an existing zoho account
-                co_await conn.login("mailio@zoho.com", "mailiopass");
+                co_await conn.login("mailxx@zoho.com", "mailxxpass");
 
                 auto [resp, stat] = co_await conn.select("INBOX");
                 (void)resp;
